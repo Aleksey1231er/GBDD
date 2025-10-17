@@ -228,6 +228,19 @@ function updateAuthUI() {
     document.querySelectorAll('.btn-edit, .btn-delete').forEach(btn => {
         btn.style.display = currentUser ? 'inline-block' : 'none';
     });
+
+    // Доступ к разделу Пользователи только админам (скрываем кнопку и раздел)
+    const usersNavBtn = Array.from(document.querySelectorAll('.main-nav button'))
+        .find(b => b.getAttribute('onclick') === "showSection('users')");
+    if (usersNavBtn) {
+        usersNavBtn.style.display = currentUser && currentUser.role === 'admin' ? 'inline-block' : 'none';
+    }
+    const usersSection = document.getElementById('users');
+    if (usersSection) {
+        if (!currentUser || currentUser.role !== 'admin') {
+            if (currentSection === 'users') showSection('main');
+        }
+    }
 }
 
 // ===== Профиль =====
