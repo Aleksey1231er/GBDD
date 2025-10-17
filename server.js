@@ -542,7 +542,37 @@ app.delete('/api/violations/:id', requireAuth, (req, res) => {
     });
 });
 
+// Функция для получения IP-адреса
+function getLocalIP() {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost';
+}
+
 // Запуск сервера
-app.listen(PORT, () => {
-    console.log(`🚓 Сервер ГИБДД запущен на http://localhost:${PORT}`);
+const HOST = '0.0.0.0'; // Слушаем на всех интерфейсах
+app.listen(PORT, HOST, () => {
+    const localIP = getLocalIP();
+    
+    console.log('='.repeat(50));
+    console.log('🚓 Сервер ГИБДД успешно запущен!');
+    console.log('='.repeat(50));
+    console.log(`🏠 Локальный доступ: http://localhost:${PORT}`);
+    console.log(`🌐 Сетевой доступ:   http://${localIP}:${PORT}`);
+    console.log('='.repeat(50));
+    console.log('📱 Для доступа с других устройств:');
+    console.log(`   1. Убедитесь, что устройства в одной сети`);
+    console.log(`   2. Откройте порт ${PORT} в брандмауэре`);
+    console.log(`   3. Используйте адрес: http://${localIP}:${PORT}`);
+    console.log('='.repeat(50));
+    console.log('🛑 Для остановки нажмите Ctrl+C');
+    console.log('');
 });
