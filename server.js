@@ -78,6 +78,7 @@ function initDatabase() {
             avatar TEXT,
             address TEXT,
             phone TEXT,
+            role TEXT DEFAULT 'user',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `;
@@ -98,13 +99,29 @@ function initDatabase() {
     addColumn('avatar', 'TEXT');
     addColumn('address', 'TEXT');
     addColumn('phone', 'TEXT');
+    addColumn('role', 'TEXT');
+
+    // Инициализация администратора через переменные окружения (опционально)
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    if (adminEmail && adminPassword) {
+        const pwdHash = bcrypt.hashSync(adminPassword, 10);
+        db.get(`SELECT id FROM users WHERE email = ?`, [adminEmail.trim().toLowerCase()], (err, row) => {
+            if (err) return;
+            if (row) {
+                db.run(`UPDATE users SET password_hash = ?, role = 'admin' WHERE id = ?`, [pwdHash, row.id]);
+            } else {
+                db.run(`INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, 'admin')`, [adminEmail.trim().toLowerCase(), pwdHash, 'Admin']);
+            }
+        });
+    }
 
     // Добавляем тестовые данные
     addTestData();
 }
 // ================== Авторизация ==================
 function signToken(user) {
-    return jwt.sign({ id: user.id, email: user.email, name: user.name, avatar: user.avatar, address: user.address, phone: user.phone }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+    return jwt.sign({ id: user.id, email: user.email, name: user.name, avatar: user.avatar, address: user.address, phone: user.phone, role: user.role || 'user' }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
 }
 
 function setAuthCookie(res, token) {
@@ -132,6 +149,13 @@ function requireAuth(req, res, next) {
     }
 }
 
+function requireAdmin(req, res, next) {
+    requireAuth(req, res, function() {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: 'Доступ запрещен' });
+        next();
+    });
+}
+
 // Регистрация
 app.post('/api/auth/register', (req, res) => {
     const { email, password, name } = req.body;
@@ -146,7 +170,7 @@ app.post('/api/auth/register', (req, res) => {
             }
             return res.status(500).json({ error: err.message });
         }
-        const user = { id: this.lastID, email: email.trim().toLowerCase(), name: name || null, avatar: null, address: null, phone: null };
+        const user = { id: this.lastID, email: email.trim().toLowerCase(), name: name || null, avatar: null, address: null, phone: null, role: 'user' };
         const token = signToken(user);
         setAuthCookie(res, token);
         return res.json({ user });
@@ -162,7 +186,7 @@ app.post('/api/auth/login', (req, res) => {
         if (!row) return res.status(400).json({ error: 'Неверные учетные данные' });
         const ok = bcrypt.compareSync(password, row.password_hash);
         if (!ok) return res.status(400).json({ error: 'Неверные учетные данные' });
-        const user = { id: row.id, email: row.email, name: row.name, avatar: row.avatar, address: row.address, phone: row.phone };
+        const user = { id: row.id, email: row.email, name: row.name, avatar: row.avatar, address: row.address, phone: row.phone, role: row.role || 'user' };
         const token = signToken(user);
         setAuthCookie(res, token);
         return res.json({ user });
@@ -181,15 +205,15 @@ app.get('/api/auth/me', (req, res) => {
     if (!token) return res.json({ user: null });
     try {
         const payload = jwt.verify(token, JWT_SECRET);
-        return res.json({ user: { id: payload.id, email: payload.email, name: payload.name, avatar: payload.avatar || null, address: payload.address || null, phone: payload.phone || null } });
+        return res.json({ user: { id: payload.id, email: payload.email, name: payload.name, avatar: payload.avatar || null, address: payload.address || null, phone: payload.phone || null, role: payload.role || 'user' } });
     } catch (e) {
         return res.json({ user: null });
     }
 });
 
 // ===== Пользователи (админ-функционал базовый) =====
-// Список пользователей (требуется авторизация)
-app.get('/api/users', requireAuth, (req, res) => {
+// Список пользователей (только админ)
+app.get('/api/users', requireAdmin, (req, res) => {
     const sql = `SELECT id, email, name, created_at FROM users ORDER BY id DESC`;
     db.all(sql, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
@@ -232,8 +256,8 @@ app.put('/api/profile', requireAuth, (req, res) => {
     });
 });
 
-// Удаление пользователя (нельзя удалить себя)
-app.delete('/api/users/:id', requireAuth, (req, res) => {
+// Удаление пользователя (только админ, нельзя удалить себя)
+app.delete('/api/users/:id', requireAdmin, (req, res) => {
     const { id } = req.params;
     if (parseInt(id) === parseInt(req.user.id)) {
         return res.status(400).json({ error: 'Нельзя удалить собственного пользователя' });
@@ -542,7 +566,37 @@ app.delete('/api/violations/:id', requireAuth, (req, res) => {
     });
 });
 
+// Функция для получения IP-адреса
+function getLocalIP() {
+    const os = require('os');
+    const interfaces = os.networkInterfaces();
+    
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return 'localhost';
+}
+
 // Запуск сервера
-app.listen(PORT, () => {
-    console.log(`🚓 Сервер ГИБДД запущен на http://localhost:${PORT}`);
+const HOST = '0.0.0.0'; // Слушаем на всех интерфейсах
+app.listen(PORT, HOST, () => {
+    const localIP = getLocalIP();
+    
+    console.log('='.repeat(50));
+    console.log('🚓 Сервер ГИБДД успешно запущен!');
+    console.log('='.repeat(50));
+    console.log(`🏠 Локальный доступ: http://localhost:${PORT}`);
+    console.log(`🌐 Сетевой доступ:   http://${localIP}:${PORT}`);
+    console.log('='.repeat(50));
+    console.log('📱 Для доступа с других устройств:');
+    console.log(`   1. Убедитесь, что устройства в одной сети`);
+    console.log(`   2. Откройте порт ${PORT} в брандмауэре`);
+    console.log(`   3. Используйте адрес: http://${localIP}:${PORT}`);
+    console.log('='.repeat(50));
+    console.log('🛑 Для остановки нажмите Ctrl+C');
+    console.log('');
 });
