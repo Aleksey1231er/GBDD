@@ -6,9 +6,9 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #52799a 0%, #5086b5 100%);
     min-height: 100vh;
-    color: #333;
+    color: #000000;
 }
 
 .container {
@@ -20,10 +20,10 @@ body {
 }
 
 header {
-    background: #2c3e50;
+    background: #5e8fbd;
     color: white;
     padding: 1rem 2rem;
-    border-bottom: 4px solid #3498db;
+    border-bottom: 4px solid #3095d8;
 }
 
 header h1 {
@@ -38,7 +38,7 @@ header h1 {
 }
 
 .main-nav button {
-    background: #34495e;
+    background: #59748e;
     color: white;
     border: none;
     padding: 0.5rem 1rem;
@@ -48,7 +48,7 @@ header h1 {
 }
 
 .main-nav button:hover {
-    background: #3498db;
+    background: #245a7e;
 }
 
 /* Бейдж пользователя с аватаром */
@@ -63,7 +63,7 @@ header h1 {
     width: 28px;
     height: 28px;
     border-radius: 50%;
-    background: #8e44ad;
+    background: #305095;
     color: #fff;
     display: inline-flex;
     align-items: center;
@@ -190,7 +190,7 @@ tr:hover {
 }
 
 .stat-card {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #ffffff 0%, #3e659d 100%);
     color: white;
     text-align: center;
     cursor: pointer;
