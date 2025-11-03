@@ -5,6 +5,9 @@ const cookieParser = require('cookie-parser');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+// Экспорт документов
+const PDFDocument = require('pdfkit');
+const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun } = require('docx');
 
 const app = express();
 const PORT = 3000;
@@ -564,6 +567,109 @@ app.delete('/api/violations/:id', requireAuth, (req, res) => {
         }
         res.json({ message: 'Нарушение успешно удалено' });
     });
+});
+
+// ===================== Экспорт документов =====================
+// Универсальный эндпоинт экспорта: принимает колонки и строки, возвращает файл указанного формата
+app.post('/api/export', (req, res) => {
+    try {
+        const { title, format, columns, rows } = req.body || {};
+        if (!Array.isArray(columns) || !Array.isArray(rows)) {
+            return res.status(400).json({ error: 'Некорректные данные для экспорта' });
+        }
+        const safeTitle = String(title || 'export').replace(/[^\wа-яА-Я\- _]+/g, '').trim() || 'export';
+
+        if (format === 'txt') {
+            const header = columns.map(c => c.title).join('\t');
+            const lines = rows.map(r => columns.map(c => (r[c.key] ?? '').toString().replace(/\n/g, ' ')).join('\t'));
+            const content = [header, ...lines].join('\n');
+            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.txt"`);
+            return res.send(content);
+        }
+
+        if (format === 'pdf') {
+            res.setHeader('Content-Type', 'application/pdf');
+            const asciiNamePdf = 'export.pdf';
+            const utfNamePdf = encodeURIComponent(`${safeTitle}.pdf`);
+            res.setHeader('Content-Disposition', `attachment; filename="${asciiNamePdf}"; filename*=UTF-8''${utfNamePdf}`);
+            const doc = new PDFDocument({ margin: 40, size: 'A4' });
+            doc.pipe(res);
+            doc.fontSize(16).text(title || 'Экспорт данных', { align: 'left' });
+            doc.moveDown();
+
+            // Простейшая табличная отрисовка: заголовки + строки с разделителями
+            const colWidths = columns.map(() => Math.floor((doc.page.width - doc.page.margins.left - doc.page.margins.right) / columns.length));
+            const drawRow = (cells, isHeader) => {
+                cells.forEach((cell, idx) => {
+                    const text = String(cell ?? '');
+                    const opts = { width: colWidths[idx], continued: idx < cells.length - 1 };
+                    if (isHeader) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
+                    doc.fontSize(10).text(text, opts);
+                });
+                doc.moveDown(0.5);
+            };
+            try {
+                drawRow(columns.map(c => c.title), true);
+                rows.forEach(r => drawRow(columns.map(c => r[c.key] ?? ''), false));
+            } catch (e) {
+                console.error('PDF export error:', e);
+                doc.text('Ошибка формирования PDF');
+            }
+
+            doc.end();
+            return;
+        }
+
+        if (format === 'docx') {
+            try {
+                const tableRows = [];
+                // Header (bold)
+                tableRows.push(new TableRow({
+                    children: columns.map(c => new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: String(c.title || ''), bold: true })] })] }))
+                }));
+                // Body
+                rows.forEach(r => {
+                    tableRows.push(new TableRow({
+                        children: columns.map(c => new TableCell({ children: [new Paragraph(String(r[c.key] ?? ''))] }))
+                    }));
+                });
+                const docx = new Document({
+                    sections: [
+                        {
+                            properties: {},
+                            children: [
+                                new Paragraph({ children: [new TextRun({ text: title || 'Экспорт данных', bold: true, size: 28 })] }),
+                                new Paragraph({ text: ' ' }),
+                                new Table({ rows: tableRows })
+                            ]
+                        }
+                    ]
+                });
+                Packer.toBuffer(docx).then(buffer => {
+                    const buf = Buffer.from(buffer);
+                    const asciiName = 'export.docx';
+                    const utfName = encodeURIComponent(`${safeTitle}.docx`);
+                    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+                    res.setHeader('Content-Disposition', `attachment; filename="${asciiName}"; filename*=UTF-8''${utfName}`);
+                    res.setHeader('Content-Length', String(buf.length));
+                    res.send(buf);
+                }).catch((err) => {
+                    console.error('DOCX pack error:', err);
+                    res.status(500).json({ error: 'Ошибка формирования DOCX' });
+                });
+            } catch (e) {
+                console.error('DOCX export error:', e);
+                return res.status(500).json({ error: 'Ошибка формирования DOCX' });
+            }
+            return;
+        }
+
+        return res.status(400).json({ error: 'Неподдерживаемый формат' });
+    } catch (e) {
+        console.error('Export endpoint error:', e);
+        return res.status(500).json({ error: 'Ошибка экспорта' });
+    }
 });
 
 // Функция для получения IP-адреса
