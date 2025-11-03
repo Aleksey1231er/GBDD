@@ -3,6 +3,14 @@ let currentSection = 'main';
 let currentDeleteAction = null;
 let currentUser = null;
 
+// Состояние сортировки
+let driversData = [];
+let vehiclesData = [];
+let violationsData = [];
+let driversSorted = false;
+let vehiclesSorted = false;
+let violationsSorted = false;
+
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     showSection('main');
@@ -385,50 +393,72 @@ async function loadDrivers() {
     try {
         const response = await fetch('/api/drivers');
         const drivers = await response.json();
+        driversData = drivers;
         
-        let html = '';
-        if (drivers.length > 0) {
-            html = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>ФИО</th>
-                            <th>Номер прав</th>
-                            <th>Адрес</th>
-                            <th>Телефон</th>
-                            <th>Дата регистрации</th>
-                            <th>Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${drivers.map(driver => `
-                            <tr>
-                                <td>${driver.id}</td>
-                                <td>${driver.full_name}</td>
-                                <td>${driver.license_number}</td>
-                                <td>${driver.address || '-'}</td>
-                                <td>${driver.phone || '-'}</td>
-                                <td>${new Date(driver.created_date).toLocaleDateString()}</td>
-                                <td class="actions">
-                                    <button class="btn-edit" onclick="editDriver(${driver.id})" title="Редактировать">✏️</button>
-                                    <button class="btn-delete" onclick="deleteDriver(${driver.id})" title="Удалить">🗑️</button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        } else {
-            html = '<p>Нет зарегистрированных водителей</p>';
-        }
-        
-        document.getElementById('driversList').innerHTML = html;
+        renderDriversTable();
         updateAuthUI();
     } catch (error) {
         console.error('Ошибка загрузки водителей:', error);
         document.getElementById('driversList').innerHTML = '<p class="alert error">Ошибка загрузки данных</p>';
     }
+}
+
+// Отрисовка таблицы водителей
+function renderDriversTable() {
+    let drivers = driversSorted ? [...driversData].sort((a, b) => {
+        const nameA = (a.full_name || '').toLowerCase();
+        const nameB = (b.full_name || '').toLowerCase();
+        return nameA.localeCompare(nameB, 'ru');
+    }) : driversData;
+    
+    let html = '';
+    if (drivers.length > 0) {
+        html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>ФИО</th>
+                        <th>Номер прав</th>
+                        <th>Адрес</th>
+                        <th>Телефон</th>
+                        <th>Дата регистрации</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${drivers.map(driver => `
+                        <tr>
+                            <td>${driver.id}</td>
+                            <td>${driver.full_name}</td>
+                            <td>${driver.license_number}</td>
+                            <td>${driver.address || '-'}</td>
+                            <td>${driver.phone || '-'}</td>
+                            <td>${new Date(driver.created_date).toLocaleDateString()}</td>
+                            <td class="actions">
+                                <button class="btn-edit" onclick="editDriver(${driver.id})" title="Редактировать">✏️</button>
+                                <button class="btn-delete" onclick="deleteDriver(${driver.id})" title="Удалить">🗑️</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } else {
+        html = '<p>Нет зарегистрированных водителей</p>';
+    }
+    
+    document.getElementById('driversList').innerHTML = html;
+    updateAuthUI();
+}
+
+// Сортировка водителей
+function sortDrivers() {
+    driversSorted = !driversSorted;
+    const btn = document.getElementById('sortDriversBtn');
+    btn.textContent = driversSorted ? '🔤 Отменить сортировку' : '🔤 Сортировать по алфавиту';
+    btn.style.background = driversSorted ? '#28a745' : '#6c757d';
+    renderDriversTable();
 }
 
 // Добавление водителя
@@ -456,6 +486,12 @@ async function addDriver(event) {
         if (response.ok) {
             showAlert('Водитель успешно добавлен!', 'success');
             document.getElementById('addDriverForm').reset();
+            driversSorted = false;
+            const btn = document.getElementById('sortDriversBtn');
+            if (btn) {
+                btn.textContent = '🔤 Сортировать по алфавиту';
+                btn.style.background = '#6c757d';
+            }
             loadDrivers();
             loadStatistics();
         } else {
@@ -471,52 +507,74 @@ async function loadVehicles() {
     try {
         const response = await fetch('/api/vehicles');
         const vehicles = await response.json();
+        vehiclesData = vehicles;
         
-        let html = '';
-        if (vehicles.length > 0) {
-            html = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Госномер</th>
-                            <th>Марка</th>
-                            <th>Модель</th>
-                            <th>Год</th>
-                            <th>Владелец</th>
-                            <th>Дата регистрации</th>
-                            <th>Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${vehicles.map(vehicle => `
-                            <tr>
-                                <td>${vehicle.id}</td>
-                                <td>${vehicle.license_plate}</td>
-                                <td>${vehicle.brand}</td>
-                                <td>${vehicle.model}</td>
-                                <td>${vehicle.year || '-'}</td>
-                                <td>${vehicle.owner_name || `ID: ${vehicle.owner_id}`}</td>
-                                <td>${new Date(vehicle.created_date).toLocaleDateString()}</td>
-                                <td class="actions">
-                                    <button class="btn-edit" onclick="editVehicle(${vehicle.id})" title="Редактировать">✏️</button>
-                                    <button class="btn-delete" onclick="deleteVehicle(${vehicle.id})" title="Удалить">🗑️</button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        } else {
-            html = '<p>Нет зарегистрированных автомобилей</p>';
-        }
-        
-        document.getElementById('vehiclesList').innerHTML = html;
+        renderVehiclesTable();
         updateAuthUI();
     } catch (error) {
         console.error('Ошибка загрузки автомобилей:', error);
         document.getElementById('vehiclesList').innerHTML = '<p class="alert error">Ошибка загрузки данных</p>';
     }
+}
+
+// Отрисовка таблицы автомобилей
+function renderVehiclesTable() {
+    let vehicles = vehiclesSorted ? [...vehiclesData].sort((a, b) => {
+        const plateA = (a.license_plate || '').toLowerCase();
+        const plateB = (b.license_plate || '').toLowerCase();
+        return plateA.localeCompare(plateB, 'ru');
+    }) : vehiclesData;
+    
+    let html = '';
+    if (vehicles.length > 0) {
+        html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Госномер</th>
+                        <th>Марка</th>
+                        <th>Модель</th>
+                        <th>Год</th>
+                        <th>Владелец</th>
+                        <th>Дата регистрации</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${vehicles.map(vehicle => `
+                        <tr>
+                            <td>${vehicle.id}</td>
+                            <td>${vehicle.license_plate}</td>
+                            <td>${vehicle.brand}</td>
+                            <td>${vehicle.model}</td>
+                            <td>${vehicle.year || '-'}</td>
+                            <td>${vehicle.owner_name || `ID: ${vehicle.owner_id}`}</td>
+                            <td>${new Date(vehicle.created_date).toLocaleDateString()}</td>
+                            <td class="actions">
+                                <button class="btn-edit" onclick="editVehicle(${vehicle.id})" title="Редактировать">✏️</button>
+                                <button class="btn-delete" onclick="deleteVehicle(${vehicle.id})" title="Удалить">🗑️</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } else {
+        html = '<p>Нет зарегистрированных автомобилей</p>';
+    }
+    
+    document.getElementById('vehiclesList').innerHTML = html;
+    updateAuthUI();
+}
+
+// Сортировка автомобилей
+function sortVehicles() {
+    vehiclesSorted = !vehiclesSorted;
+    const btn = document.getElementById('sortVehiclesBtn');
+    btn.textContent = vehiclesSorted ? '🔤 Отменить сортировку' : '🔤 Сортировать по алфавиту';
+    btn.style.background = vehiclesSorted ? '#28a745' : '#6c757d';
+    renderVehiclesTable();
 }
 
 // Добавление автомобиля
@@ -575,6 +633,12 @@ async function addVehicle(event) {
         if (response.ok) {
             showAlert('Автомобиль успешно добавлен!', 'success');
             document.getElementById('addVehicleForm').reset();
+            vehiclesSorted = false;
+            const btn = document.getElementById('sortVehiclesBtn');
+            if (btn) {
+                btn.textContent = '🔤 Сортировать по алфавиту';
+                btn.style.background = '#6c757d';
+            }
             loadVehicles();
             loadStatistics();
         } else {
@@ -595,52 +659,74 @@ async function loadViolations() {
     try {
         const response = await fetch('/api/violations');
         const violations = await response.json();
+        violationsData = violations;
         
-        let html = '';
-        if (violations.length > 0) {
-            html = `
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>Водитель</th>
-                            <th>Автомобиль</th>
-                            <th>Тип нарушения</th>
-                            <th>Штраф</th>
-                            <th>Статус</th>
-                            <th>Дата</th>
-                            <th>Действия</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${violations.map(violation => `
-                            <tr>
-                                <td>${violation.id}</td>
-                                <td>${violation.full_name || `ID: ${violation.driver_id}`}</td>
-                                <td>${violation.license_plate ? `${violation.license_plate} (${violation.brand} ${violation.model})` : `ID: ${violation.vehicle_id}`}</td>
-                                <td>${violation.violation_type}</td>
-                                <td>${violation.fine_amount} руб.</td>
-                                <td>${violation.status}</td>
-                                <td>${new Date(violation.violation_date).toLocaleDateString()}</td>
-                                <td class="actions">
-                                    <button class="btn-edit" onclick="editViolation(${violation.id})" title="Редактировать">✏️</button>
-                                    <button class="btn-delete" onclick="deleteViolation(${violation.id})" title="Удалить">🗑️</button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            `;
-        } else {
-            html = '<p>Нет зарегистрированных нарушений</p>';
-        }
-        
-        document.getElementById('violationsList').innerHTML = html;
+        renderViolationsTable();
         updateAuthUI();
     } catch (error) {
         console.error('Ошибка загрузки нарушений:', error);
         document.getElementById('violationsList').innerHTML = '<p class="alert error">Ошибка загрузки данных</p>';
     }
+}
+
+// Отрисовка таблицы нарушений
+function renderViolationsTable() {
+    let violations = violationsSorted ? [...violationsData].sort((a, b) => {
+        const typeA = (a.violation_type || '').toLowerCase();
+        const typeB = (b.violation_type || '').toLowerCase();
+        return typeA.localeCompare(typeB, 'ru');
+    }) : violationsData;
+    
+    let html = '';
+    if (violations.length > 0) {
+        html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Водитель</th>
+                        <th>Автомобиль</th>
+                        <th>Тип нарушения</th>
+                        <th>Штраф</th>
+                        <th>Статус</th>
+                        <th>Дата</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${violations.map(violation => `
+                        <tr>
+                            <td>${violation.id}</td>
+                            <td>${violation.full_name || `ID: ${violation.driver_id}`}</td>
+                            <td>${violation.license_plate ? `${violation.license_plate} (${violation.brand} ${violation.model})` : `ID: ${violation.vehicle_id}`}</td>
+                            <td>${violation.violation_type}</td>
+                            <td>${violation.fine_amount} руб.</td>
+                            <td>${violation.status}</td>
+                            <td>${new Date(violation.violation_date).toLocaleDateString()}</td>
+                            <td class="actions">
+                                <button class="btn-edit" onclick="editViolation(${violation.id})" title="Редактировать">✏️</button>
+                                <button class="btn-delete" onclick="deleteViolation(${violation.id})" title="Удалить">🗑️</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+    } else {
+        html = '<p>Нет зарегистрированных нарушений</p>';
+    }
+    
+    document.getElementById('violationsList').innerHTML = html;
+    updateAuthUI();
+}
+
+// Сортировка нарушений
+function sortViolations() {
+    violationsSorted = !violationsSorted;
+    const btn = document.getElementById('sortViolationsBtn');
+    btn.textContent = violationsSorted ? '🔤 Отменить сортировку' : '🔤 Сортировать по алфавиту';
+    btn.style.background = violationsSorted ? '#28a745' : '#6c757d';
+    renderViolationsTable();
 }
 
 // Добавление нарушения
@@ -668,6 +754,12 @@ async function addViolation(event) {
         if (response.ok) {
             showAlert('Нарушение успешно добавлено!', 'success');
             document.getElementById('addViolationForm').reset();
+            violationsSorted = false;
+            const btn = document.getElementById('sortViolationsBtn');
+            if (btn) {
+                btn.textContent = '🔤 Сортировать по алфавиту';
+                btn.style.background = '#6c757d';
+            }
             loadViolations();
             loadStatistics();
         } else {

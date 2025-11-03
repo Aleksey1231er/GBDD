@@ -89,7 +89,12 @@
                 </div>
 
                 <div class="table-card">
-                    <h3>Список водителей</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">Список водителей</h3>
+                        <button id="sortDriversBtn" onclick="sortDrivers()" style="background: #6c757d; padding: 0.5rem 1rem;">
+                            🔤 Сортировать по алфавиту
+                        </button>
+                    </div>
                     <div id="driversList"></div>
                 </div>
             </section>
@@ -111,7 +116,12 @@
                 </div>
 
                 <div class="table-card">
-                    <h3>Список автомобилей</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">Список автомобилей</h3>
+                        <button id="sortVehiclesBtn" onclick="sortVehicles()" style="background: #6c757d; padding: 0.5rem 1rem;">
+                            🔤 Сортировать по алфавиту
+                        </button>
+                    </div>
                     <div id="vehiclesList"></div>
                 </div>
             </section>
@@ -132,7 +142,12 @@
                 </div>
 
                 <div class="table-card">
-                    <h3>Список нарушений</h3>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0;">Список нарушений</h3>
+                        <button id="sortViolationsBtn" onclick="sortViolations()" style="background: #6c757d; padding: 0.5rem 1rem;">
+                            🔤 Сортировать по алфавиту
+                        </button>
+                    </div>
                     <div id="violationsList"></div>
                 </div>
             </section>
