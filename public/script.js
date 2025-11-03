@@ -7,6 +7,7 @@ let currentUser = null;
 let driversData = [];
 let vehiclesData = [];
 let violationsData = [];
+let searchResultsData = [];
 let driversSorted = false;
 let vehiclesSorted = false;
 let violationsSorted = false;
@@ -780,6 +781,7 @@ async function searchDrivers(event) {
     try {
         const response = await fetch(`/api/search/drivers?type=${searchType}&value=${encodeURIComponent(searchValue)}`);
         const drivers = await response.json();
+        searchResultsData = drivers;
         
         let html = '';
         if (drivers.length > 0) {
@@ -815,6 +817,136 @@ async function searchDrivers(event) {
     } catch (error) {
         console.error('Ошибка поиска:', error);
         document.getElementById('searchResults').innerHTML = '<p class="alert error">Ошибка поиска</p>';
+    }
+}
+
+// ===================== Экспорт =====================
+function buildExportPayload(section, format) {
+    if (section === 'drivers') {
+        const rows = (driversSorted ? [...driversData].sort((a,b)=> (a.full_name||'').localeCompare((b.full_name||''),'ru')) : driversData)
+            .map(d => ({ id: d.id, full_name: d.full_name, license_number: d.license_number, address: d.address || '-', phone: d.phone || '-', created_date: new Date(d.created_date).toLocaleDateString() }));
+        return {
+            title: 'Водители',
+            format,
+            columns: [
+                { key: 'id', title: 'ID' },
+                { key: 'full_name', title: 'ФИО' },
+                { key: 'license_number', title: 'Номер прав' },
+                { key: 'address', title: 'Адрес' },
+                { key: 'phone', title: 'Телефон' },
+                { key: 'created_date', title: 'Дата регистрации' }
+            ],
+            rows
+        };
+    }
+    if (section === 'vehicles') {
+        const rows = (vehiclesSorted ? [...vehiclesData].sort((a,b)=> (a.license_plate||'').localeCompare((b.license_plate||''),'ru')) : vehiclesData)
+            .map(v => ({ id: v.id, license_plate: v.license_plate, brand: v.brand, model: v.model, year: v.year || '-', owner: v.owner_name || `ID: ${v.owner_id}`, created_date: new Date(v.created_date).toLocaleDateString() }));
+        return {
+            title: 'Автомобили',
+            format,
+            columns: [
+                { key: 'id', title: 'ID' },
+                { key: 'license_plate', title: 'Госномер' },
+                { key: 'brand', title: 'Марка' },
+                { key: 'model', title: 'Модель' },
+                { key: 'year', title: 'Год' },
+                { key: 'owner', title: 'Владелец' },
+                { key: 'created_date', title: 'Дата регистрации' }
+            ],
+            rows
+        };
+    }
+    if (section === 'violations') {
+        const rows = (violationsSorted ? [...violationsData].sort((a,b)=> (a.violation_type||'').localeCompare((b.violation_type||''),'ru')) : violationsData)
+            .map(v => ({
+                id: v.id,
+                driver: v.full_name || `ID: ${v.driver_id}`,
+                vehicle: v.license_plate ? `${v.license_plate} (${v.brand} ${v.model})` : `ID: ${v.vehicle_id}`,
+                violation_type: v.violation_type,
+                fine_amount: `${v.fine_amount} руб.`,
+                status: v.status,
+                violation_date: new Date(v.violation_date).toLocaleDateString()
+            }));
+        return {
+            title: 'Нарушения',
+            format,
+            columns: [
+                { key: 'id', title: 'ID' },
+                { key: 'driver', title: 'Водитель' },
+                { key: 'vehicle', title: 'Автомобиль' },
+                { key: 'violation_type', title: 'Тип нарушения' },
+                { key: 'fine_amount', title: 'Штраф' },
+                { key: 'status', title: 'Статус' },
+                { key: 'violation_date', title: 'Дата' }
+            ],
+            rows
+        };
+    }
+    if (section === 'search') {
+        const rows = searchResultsData.map(d => ({ id: d.id, full_name: d.full_name, license_number: d.license_number, address: d.address || '-', phone: d.phone || '-' }));
+        return {
+            title: 'Результаты поиска водителей',
+            format,
+            columns: [
+                { key: 'id', title: 'ID' },
+                { key: 'full_name', title: 'ФИО' },
+                { key: 'license_number', title: 'Номер прав' },
+                { key: 'address', title: 'Адрес' },
+                { key: 'phone', title: 'Телефон' }
+            ],
+            rows
+        };
+    }
+    return null;
+}
+
+async function exportData(section, format) {
+    const payload = buildExportPayload(section, format);
+    if (!payload) return;
+    if (!payload.rows || payload.rows.length === 0) {
+        return showAlert('Нет данных для экспорта', 'error');
+    }
+
+    // Клиентский экспорт TXT (без сервера)
+    if (format === 'txt') {
+        const header = payload.columns.map(c => c.title).join('\t');
+        const lines = payload.rows.map(r => payload.columns.map(c => String(r[c.key] ?? '').replace(/\n/g, ' ')).join('\t'));
+        const content = [header, ...lines].join('\n');
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${payload.title}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        return;
+    }
+
+    // DOCX/PDF через сервер
+    try {
+        const res = await fetch('/api/export', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+            const e = await res.json().catch(()=>({ error: 'Ошибка экспорта'}));
+            return showAlert(e.error || 'Ошибка экспорта', 'error');
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${payload.title}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (e) {
+        showAlert('Ошибка сети при экспорте', 'error');
     }
 }
 
