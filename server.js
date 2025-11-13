@@ -5,8 +5,6 @@ const cookieParser = require('cookie-parser');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-// Экспорт документов
-const PDFDocument = require('pdfkit');
 const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun } = require('docx');
 
 const app = express();
@@ -82,6 +80,8 @@ function initDatabase() {
             address TEXT,
             phone TEXT,
             role TEXT DEFAULT 'user',
+            is_deleted INTEGER DEFAULT 0,
+            deleted_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `;
@@ -103,6 +103,8 @@ function initDatabase() {
     addColumn('address', 'TEXT');
     addColumn('phone', 'TEXT');
     addColumn('role', 'TEXT');
+    addColumn('is_deleted', 'INTEGER DEFAULT 0');
+    addColumn('deleted_at', 'DATETIME');
 
     // Инициализация администратора через переменные окружения (опционально)
     const adminEmail = process.env.ADMIN_EMAIL;
@@ -143,13 +145,33 @@ function clearAuthCookie(res) {
 function requireAuth(req, res, next) {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ error: 'Требуется авторизация' });
+    let payload;
     try {
-        const payload = jwt.verify(token, JWT_SECRET);
-        req.user = payload;
-        next();
+        payload = jwt.verify(token, JWT_SECRET);
     } catch (e) {
         return res.status(401).json({ error: 'Недействительный токен' });
     }
+    db.get(
+        `SELECT id, email, name, avatar, address, phone, role, is_deleted FROM users WHERE id = ?`,
+        [payload.id],
+        (err, row) => {
+            if (err) return res.status(500).json({ error: 'Ошибка проверки пользователя' });
+            if (!row || row.is_deleted) {
+                clearAuthCookie(res);
+                return res.status(401).json({ error: 'Пользователь деактивирован' });
+            }
+            req.user = {
+                id: row.id,
+                email: row.email,
+                name: row.name,
+                avatar: row.avatar,
+                address: row.address,
+                phone: row.phone,
+                role: row.role || 'user'
+            };
+            next();
+        }
+    );
 }
 
 function requireAdmin(req, res, next) {
@@ -187,6 +209,7 @@ app.post('/api/auth/login', (req, res) => {
     db.get(`SELECT * FROM users WHERE email = ?`, [email.trim().toLowerCase()], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (!row) return res.status(400).json({ error: 'Неверные учетные данные' });
+        if (row.is_deleted) return res.status(403).json({ error: 'Учетная запись деактивирована администратором' });
         const ok = bcrypt.compareSync(password, row.password_hash);
         if (!ok) return res.status(400).json({ error: 'Неверные учетные данные' });
         const user = { id: row.id, email: row.email, name: row.name, avatar: row.avatar, address: row.address, phone: row.phone, role: row.role || 'user' };
@@ -208,8 +231,29 @@ app.get('/api/auth/me', (req, res) => {
     if (!token) return res.json({ user: null });
     try {
         const payload = jwt.verify(token, JWT_SECRET);
-        return res.json({ user: { id: payload.id, email: payload.email, name: payload.name, avatar: payload.avatar || null, address: payload.address || null, phone: payload.phone || null, role: payload.role || 'user' } });
+        db.get(
+            `SELECT id, email, name, avatar, address, phone, role, is_deleted FROM users WHERE id = ?`,
+            [payload.id],
+            (err, row) => {
+                if (err || !row || row.is_deleted) {
+                    clearAuthCookie(res);
+                    return res.json({ user: null });
+                }
+                return res.json({
+                    user: {
+                        id: row.id,
+                        email: row.email,
+                        name: row.name,
+                        avatar: row.avatar || null,
+                        address: row.address || null,
+                        phone: row.phone || null,
+                        role: row.role || 'user'
+                    }
+                });
+            }
+        );
     } catch (e) {
+        clearAuthCookie(res);
         return res.json({ user: null });
     }
 });
@@ -217,7 +261,11 @@ app.get('/api/auth/me', (req, res) => {
 // ===== Пользователи (админ-функционал базовый) =====
 // Список пользователей (только админ)
 app.get('/api/users', requireAdmin, (req, res) => {
-    const sql = `SELECT id, email, name, created_at FROM users ORDER BY id DESC`;
+    const sql = `
+        SELECT id, email, name, role, address, phone, created_at, is_deleted, deleted_at
+        FROM users
+        ORDER BY is_deleted ASC, id DESC
+    `;
     db.all(sql, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
@@ -250,7 +298,7 @@ app.put('/api/profile', requireAuth, (req, res) => {
     db.run(sql, [name || null, address || null, phone || null, avatarToSave || null, req.user.id], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         // Возвращаем свежие данные пользователя
-        db.get(`SELECT id, email, name, avatar, address, phone FROM users WHERE id = ?`, [req.user.id], (e, row) => {
+        db.get(`SELECT id, email, name, avatar, address, phone, role FROM users WHERE id = ?`, [req.user.id], (e, row) => {
             if (e) return res.status(500).json({ error: e.message });
             const token = signToken(row);
             setAuthCookie(res, token);
@@ -265,10 +313,70 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
     if (parseInt(id) === parseInt(req.user.id)) {
         return res.status(400).json({ error: 'Нельзя удалить собственного пользователя' });
     }
-    db.run(`DELETE FROM users WHERE id = ?`, [id], function(err) {
+    db.get(`SELECT id, is_deleted FROM users WHERE id = ?`, [id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (this.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
-        res.json({ ok: true });
+        if (!row) return res.status(404).json({ error: 'Пользователь не найден' });
+        if (row.is_deleted) return res.status(400).json({ error: 'Пользователь уже деактивирован' });
+        db.run(`UPDATE users SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id], function(updateErr) {
+            if (updateErr) return res.status(500).json({ error: updateErr.message });
+            res.json({ ok: true, message: 'Пользователь деактивирован' });
+        });
+    });
+});
+
+app.patch('/api/users/:id/restore', requireAdmin, (req, res) => {
+    const { id } = req.params;
+    db.get(`SELECT id, is_deleted FROM users WHERE id = ?`, [id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: 'Пользователь не найден' });
+        if (!row.is_deleted) return res.status(400).json({ error: 'Пользователь уже активен' });
+        db.run(`UPDATE users SET is_deleted = 0, deleted_at = NULL WHERE id = ?`, [id], function(updateErr) {
+            if (updateErr) return res.status(500).json({ error: updateErr.message });
+            res.json({ ok: true, message: 'Пользователь восстановлен' });
+        });
+    });
+});
+
+app.put('/api/users/:id', requireAdmin, (req, res) => {
+    const { id } = req.params;
+    const { email, name, role, address, phone } = req.body || {};
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : null;
+    if (!normalizedEmail) return res.status(400).json({ error: 'Email обязателен' });
+    const safeRole = role === 'admin' ? 'admin' : 'user';
+
+    db.get(`SELECT id, is_deleted FROM users WHERE id = ?`, [id], (err, userRow) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!userRow) return res.status(404).json({ error: 'Пользователь не найден' });
+        db.get(`SELECT id FROM users WHERE email = ? AND id <> ?`, [normalizedEmail, id], (dupErr, dupRow) => {
+            if (dupErr) return res.status(500).json({ error: dupErr.message });
+            if (dupRow) return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
+
+            db.run(
+                `UPDATE users
+                 SET email = ?, name = ?, role = ?, address = ?, phone = ?
+                 WHERE id = ?`,
+                [
+                    normalizedEmail,
+                    name ? name.trim() : null,
+                    safeRole,
+                    address ? address.trim() : null,
+                    phone ? phone.trim() : null,
+                    id
+                ],
+                function(updateErr) {
+                    if (updateErr) return res.status(500).json({ error: updateErr.message });
+                    db.get(
+                        `SELECT id, email, name, role, address, phone, created_at, is_deleted, deleted_at
+                         FROM users WHERE id = ?`,
+                        [id],
+                        (finalErr, updatedRow) => {
+                            if (finalErr) return res.status(500).json({ error: finalErr.message });
+                            res.json({ ok: true, user: updatedRow });
+                        }
+                    );
+                }
+            );
+        });
     });
 });
 
@@ -578,48 +686,6 @@ app.post('/api/export', (req, res) => {
             return res.status(400).json({ error: 'Некорректные данные для экспорта' });
         }
         const safeTitle = String(title || 'export').replace(/[^\wа-яА-Я\- _]+/g, '').trim() || 'export';
-
-        if (format === 'txt') {
-            const header = columns.map(c => c.title).join('\t');
-            const lines = rows.map(r => columns.map(c => (r[c.key] ?? '').toString().replace(/\n/g, ' ')).join('\t'));
-            const content = [header, ...lines].join('\n');
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.txt"`);
-            return res.send(content);
-        }
-
-        if (format === 'pdf') {
-            res.setHeader('Content-Type', 'application/pdf');
-            const asciiNamePdf = 'export.pdf';
-            const utfNamePdf = encodeURIComponent(`${safeTitle}.pdf`);
-            res.setHeader('Content-Disposition', `attachment; filename="${asciiNamePdf}"; filename*=UTF-8''${utfNamePdf}`);
-            const doc = new PDFDocument({ margin: 40, size: 'A4' });
-            doc.pipe(res);
-            doc.fontSize(16).text(title || 'Экспорт данных', { align: 'left' });
-            doc.moveDown();
-
-            // Простейшая табличная отрисовка: заголовки + строки с разделителями
-            const colWidths = columns.map(() => Math.floor((doc.page.width - doc.page.margins.left - doc.page.margins.right) / columns.length));
-            const drawRow = (cells, isHeader) => {
-                cells.forEach((cell, idx) => {
-                    const text = String(cell ?? '');
-                    const opts = { width: colWidths[idx], continued: idx < cells.length - 1 };
-                    if (isHeader) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
-                    doc.fontSize(10).text(text, opts);
-                });
-                doc.moveDown(0.5);
-            };
-            try {
-                drawRow(columns.map(c => c.title), true);
-                rows.forEach(r => drawRow(columns.map(c => r[c.key] ?? ''), false));
-            } catch (e) {
-                console.error('PDF export error:', e);
-                doc.text('Ошибка формирования PDF');
-            }
-
-            doc.end();
-            return;
-        }
 
         if (format === 'docx') {
             try {

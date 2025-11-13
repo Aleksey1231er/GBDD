@@ -8,6 +8,7 @@ let driversData = [];
 let vehiclesData = [];
 let violationsData = [];
 let searchResultsData = [];
+let usersData = [];
 let driversSorted = false;
 let vehiclesSorted = false;
 let violationsSorted = false;
@@ -35,6 +36,11 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('editDriverForm').addEventListener('submit', updateDriver);
     document.getElementById('editVehicleForm').addEventListener('submit', updateVehicle);
     document.getElementById('editViolationForm').addEventListener('submit', updateViolation);
+    
+    const editUserForm = document.getElementById('editUserForm');
+    if (editUserForm) {
+        editUserForm.addEventListener('submit', updateUser);
+    }
     
     // Обработчик подтверждения удаления
     document.getElementById('confirmDeleteBtn').addEventListener('click', confirmDelete);
@@ -234,7 +240,7 @@ function updateAuthUI() {
     forms.forEach(form => { if (form) form.style.display = currentUser ? 'grid' : 'none'; });
 
     // Кнопки редактирования/удаления
-    document.querySelectorAll('.btn-edit, .btn-delete').forEach(btn => {
+    document.querySelectorAll('.btn-edit, .btn-delete, .btn-restore').forEach(btn => {
         btn.style.display = currentUser ? 'inline-block' : 'none';
     });
 
@@ -908,24 +914,11 @@ async function exportData(section, format) {
         return showAlert('Нет данных для экспорта', 'error');
     }
 
-    // Клиентский экспорт TXT (без сервера)
-    if (format === 'txt') {
-        const header = payload.columns.map(c => c.title).join('\t');
-        const lines = payload.rows.map(r => payload.columns.map(c => String(r[c.key] ?? '').replace(/\n/g, ' ')).join('\t'));
-        const content = [header, ...lines].join('\n');
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${payload.title}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        return;
+    if (format !== 'docx') {
+        return showAlert('Поддерживается только экспорт в DOCX', 'error');
     }
 
-    // DOCX/PDF через сервер
+    // DOCX через сервер
     try {
         const res = await fetch('/api/export', {
             method: 'POST',
@@ -1299,15 +1292,23 @@ window.onclick = function(event) {
 // ===================== Пользователи =====================
 // Загрузка пользователей
 async function loadUsers() {
+    usersData = [];
     try {
         const res = await fetch('/api/users');
-        if (res.status === 401) {
-            showAlert('Требуется авторизация', 'error');
+        let data = await res.json().catch(() => null);
+
+        if (!res.ok) {
+            const message = data && data.error ? data.error : 'Ошибка загрузки пользователей';
+            const container = document.getElementById('usersList');
+            if (container) container.innerHTML = `<p class="alert error">${message}</p>`;
             return;
         }
-        const users = await res.json();
+
+        if (!Array.isArray(data)) data = [];
+        usersData = data;
+
         let html = '';
-        if (users.length > 0) {
+        if (usersData.length > 0) {
             html = `
                 <table>
                     <thead>
@@ -1315,40 +1316,104 @@ async function loadUsers() {
                             <th>ID</th>
                             <th>Email</th>
                             <th>Имя</th>
-                            <th>Дата</th>
+                            <th>Роль</th>
+                            <th>Телефон</th>
+                            <th>Статус</th>
+                            <th>Создан</th>
                             <th>Действия</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${users.map(u => `
-                            <tr>
-                                <td>${u.id}</td>
-                                <td>${u.email}</td>
-                                <td>${u.name || '-'}</td>
-                                <td>${new Date(u.created_at).toLocaleDateString()}</td>
-                                <td class="actions">
-                                    <button class="btn-delete" onclick="deleteUser(${u.id})" title="Удалить" ${currentUser && currentUser.id === u.id ? 'disabled' : ''}>🗑️</button>
-                                </td>
-                            </tr>
-                        `).join('')}
+                        ${usersData.map(u => {
+                            const status = u.is_deleted ? 'Деактивирован' : 'Активен';
+                            const createdAt = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
+                            const disableDelete = (currentUser && Number(currentUser.id) === Number(u.id)) || u.is_deleted;
+                            return `
+                                <tr class="${u.is_deleted ? 'row-muted' : ''}">
+                                    <td>${u.id}</td>
+                                    <td>${u.email}</td>
+                                    <td>${u.name || '-'}</td>
+                                    <td>${u.role || 'user'}</td>
+                                    <td>${u.phone || '-'}</td>
+                                    <td>${status}</td>
+                                    <td>${createdAt}</td>
+                                    <td class="actions">
+                                        <button class="btn-edit" onclick="openEditUser(${u.id})" title="Редактировать" ${u.is_deleted ? 'disabled' : ''}>✏️</button>
+                                        <button class="btn-delete" onclick="deleteUser(${u.id})" title="Деактивировать" ${disableDelete ? 'disabled' : ''}>🗑️</button>
+                                        <button class="btn-restore" onclick="restoreUser(${u.id})" title="Восстановить" ${u.is_deleted ? '' : 'disabled'}>♻️</button>
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('')}
                     </tbody>
                 </table>
             `;
         } else {
             html = '<p>Пользователи не найдены</p>';
         }
-        document.getElementById('usersList').innerHTML = html;
+
+        const container = document.getElementById('usersList');
+        if (container) container.innerHTML = html;
         updateAuthUI();
     } catch (e) {
-        document.getElementById('usersList').innerHTML = '<p class="alert error">Ошибка загрузки пользователей</p>';
+        const container = document.getElementById('usersList');
+        if (container) container.innerHTML = '<p class="alert error">Ошибка загрузки пользователей</p>';
+    }
+}
+
+function openEditUser(id) {
+    const user = usersData.find(u => Number(u.id) === Number(id));
+    if (!user) return showAlert('Пользователь не найден', 'error');
+    if (user.is_deleted) return showAlert('Сначала восстановите пользователя', 'error');
+
+    document.getElementById('editUserId').value = user.id;
+    document.getElementById('editUserEmail').value = user.email || '';
+    document.getElementById('editUserName').value = user.name || '';
+    document.getElementById('editUserPhone').value = user.phone || '';
+    document.getElementById('editUserAddress').value = user.address || '';
+    document.getElementById('editUserRole').value = user.role === 'admin' ? 'admin' : 'user';
+    openModal('editUserModal');
+}
+
+async function updateUser(event) {
+    event.preventDefault();
+    const id = document.getElementById('editUserId').value;
+    const payload = {
+        email: document.getElementById('editUserEmail').value,
+        name: document.getElementById('editUserName').value,
+        phone: document.getElementById('editUserPhone').value,
+        address: document.getElementById('editUserAddress').value,
+        role: document.getElementById('editUserRole').value
+    };
+
+    try {
+        const res = await fetch(`/api/users/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return showAlert(data.error || 'Ошибка обновления пользователя', 'error');
+        showAlert('Пользователь обновлен', 'success');
+        closeModal('editUserModal');
+        loadUsers();
+        if (currentUser && Number(currentUser.id) === Number(id)) {
+            checkAuth();
+        }
+    } catch (e) {
+        showAlert('Ошибка сети', 'error');
     }
 }
 
 async function deleteUser(id) {
     if (!currentUser) return showAlert('Требуется авторизация', 'error');
-    if (id === currentUser.id) return showAlert('Нельзя удалить себя', 'error');
+    if (Number(id) === Number(currentUser.id)) return showAlert('Нельзя деактивировать себя', 'error');
+    const user = usersData.find(u => Number(u.id) === Number(id));
+    if (!user) return showAlert('Пользователь не найден', 'error');
+    if (user.is_deleted) return showAlert('Пользователь уже деактивирован', 'error');
+
     currentDeleteAction = () => deleteUserConfirm(id);
-    document.getElementById('deleteConfirmMessage').textContent = 'Вы уверены, что хотите удалить этого пользователя?';
+    document.getElementById('deleteConfirmMessage').textContent = 'Вы уверены, что хотите деактивировать этого пользователя?';
     openModal('deleteConfirmModal');
 }
 
@@ -1356,9 +1421,26 @@ async function deleteUserConfirm(id) {
     try {
         const res = await fetch(`/api/users/${id}`, { method: 'DELETE' });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok) return showAlert(data.error || 'Ошибка удаления', 'error');
-        showAlert('Пользователь удален', 'success');
+        if (!res.ok) return showAlert(data.error || 'Ошибка деактивации', 'error');
+        showAlert(data.message || 'Пользователь деактивирован', 'success');
         closeModal('deleteConfirmModal');
+        loadUsers();
+    } catch (e) {
+        showAlert('Ошибка сети', 'error');
+    }
+}
+
+async function restoreUser(id) {
+    if (!currentUser) return showAlert('Требуется авторизация', 'error');
+    const user = usersData.find(u => Number(u.id) === Number(id));
+    if (!user) return showAlert('Пользователь не найден', 'error');
+    if (!user.is_deleted) return showAlert('Пользователь уже активен', 'error');
+
+    try {
+        const res = await fetch(`/api/users/${id}/restore`, { method: 'PATCH' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return showAlert(data.error || 'Ошибка восстановления', 'error');
+        showAlert(data.message || 'Пользователь восстановлен', 'success');
         loadUsers();
     } catch (e) {
         showAlert('Ошибка сети', 'error');
