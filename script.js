@@ -908,24 +908,11 @@ async function exportData(section, format) {
         return showAlert('Нет данных для экспорта', 'error');
     }
 
-    // Клиентский экспорт TXT (без сервера)
-    if (format === 'txt') {
-        const header = payload.columns.map(c => c.title).join('\t');
-        const lines = payload.rows.map(r => payload.columns.map(c => String(r[c.key] ?? '').replace(/\n/g, ' ')).join('\t'));
-        const content = [header, ...lines].join('\n');
-        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${payload.title}.txt`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        return;
+    if (format !== 'docx') {
+        return showAlert('Поддерживается только экспорт в DOCX', 'error');
     }
 
-    // DOCX/PDF через сервер
+    // DOCX через сервер
     try {
         const res = await fetch('/api/export', {
             method: 'POST',
