@@ -5,8 +5,6 @@ const cookieParser = require('cookie-parser');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-// Экспорт документов
-const PDFDocument = require('pdfkit');
 const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun } = require('docx');
 
 const app = express();
@@ -578,48 +576,6 @@ app.post('/api/export', (req, res) => {
             return res.status(400).json({ error: 'Некорректные данные для экспорта' });
         }
         const safeTitle = String(title || 'export').replace(/[^\wа-яА-Я\- _]+/g, '').trim() || 'export';
-
-        if (format === 'txt') {
-            const header = columns.map(c => c.title).join('\t');
-            const lines = rows.map(r => columns.map(c => (r[c.key] ?? '').toString().replace(/\n/g, ' ')).join('\t'));
-            const content = [header, ...lines].join('\n');
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.txt"`);
-            return res.send(content);
-        }
-
-        if (format === 'pdf') {
-            res.setHeader('Content-Type', 'application/pdf');
-            const asciiNamePdf = 'export.pdf';
-            const utfNamePdf = encodeURIComponent(`${safeTitle}.pdf`);
-            res.setHeader('Content-Disposition', `attachment; filename="${asciiNamePdf}"; filename*=UTF-8''${utfNamePdf}`);
-            const doc = new PDFDocument({ margin: 40, size: 'A4' });
-            doc.pipe(res);
-            doc.fontSize(16).text(title || 'Экспорт данных', { align: 'left' });
-            doc.moveDown();
-
-            // Простейшая табличная отрисовка: заголовки + строки с разделителями
-            const colWidths = columns.map(() => Math.floor((doc.page.width - doc.page.margins.left - doc.page.margins.right) / columns.length));
-            const drawRow = (cells, isHeader) => {
-                cells.forEach((cell, idx) => {
-                    const text = String(cell ?? '');
-                    const opts = { width: colWidths[idx], continued: idx < cells.length - 1 };
-                    if (isHeader) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
-                    doc.fontSize(10).text(text, opts);
-                });
-                doc.moveDown(0.5);
-            };
-            try {
-                drawRow(columns.map(c => c.title), true);
-                rows.forEach(r => drawRow(columns.map(c => r[c.key] ?? ''), false));
-            } catch (e) {
-                console.error('PDF export error:', e);
-                doc.text('Ошибка формирования PDF');
-            }
-
-            doc.end();
-            return;
-        }
 
         if (format === 'docx') {
             try {
