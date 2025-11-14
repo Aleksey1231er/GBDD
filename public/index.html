@@ -93,9 +93,7 @@
                         <h3 style="margin: 0;">Список водителей</h3>
                         <div style="display:flex; gap:.5rem;">
                             <button id="sortDriversBtn" onclick="sortDrivers()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
-                            <button onclick="exportData('drivers','txt')" title="TXT" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('drivers','docx')" title="DOCX" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('drivers','pdf')" title="PDF" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
                     </div>
                     <div id="driversList"></div>
@@ -123,9 +121,7 @@
                         <h3 style="margin: 0;">Список автомобилей</h3>
                         <div style="display:flex; gap:.5rem;">
                             <button id="sortVehiclesBtn" onclick="sortVehicles()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
-                            <button onclick="exportData('vehicles','txt')" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('vehicles','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('vehicles','pdf')" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
                     </div>
                     <div id="vehiclesList"></div>
@@ -152,9 +148,7 @@
                         <h3 style="margin: 0;">Список нарушений</h3>
                         <div style="display:flex; gap:.5rem;">
                             <button id="sortViolationsBtn" onclick="sortViolations()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
-                            <button onclick="exportData('violations','txt')" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('violations','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('violations','pdf')" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
                     </div>
                     <div id="violationsList"></div>
@@ -181,9 +175,7 @@
                     <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom:1rem;">
                         <h3 style="margin:0;">Результаты поиска</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button onclick="exportData('search','txt')" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('search','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('search','pdf')" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
                     </div>
                     <div id="searchResults"></div>
@@ -305,6 +297,31 @@
                 <input type="number" id="editVehicleOwnerId" placeholder="ID владельца" required>
                 <div class="modal-buttons">
                     <button type="button" onclick="closeModal('editVehicleModal')">Отмена</button>
+                    <button type="submit">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно редактирования пользователя -->
+    <div id="editUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Редактировать пользователя</h3>
+                <span class="close" onclick="closeModal('editUserModal')">&times;</span>
+            </div>
+            <form id="editUserForm">
+                <input type="hidden" id="editUserId">
+                <input type="email" id="editUserEmail" placeholder="Email" required>
+                <input type="text" id="editUserName" placeholder="Имя">
+                <input type="text" id="editUserPhone" placeholder="Телефон">
+                <input type="text" id="editUserAddress" placeholder="Адрес">
+                <select id="editUserRole">
+                    <option value="user">Пользователь</option>
+                    <option value="admin">Администратор</option>
+                </select>
+                <div class="modal-buttons">
+                    <button type="button" onclick="closeModal('editUserModal')">Отмена</button>
                     <button type="submit">Сохранить</button>
                 </div>
             </form>
