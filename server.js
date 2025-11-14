@@ -5,8 +5,6 @@ const cookieParser = require('cookie-parser');
 const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-// Экспорт документов
-const PDFDocument = require('pdfkit');
 const { Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun } = require('docx');
 
 const app = express();
@@ -67,8 +65,14 @@ function initDatabase() {
             fine_amount DECIMAL(10,2),
             violation_date DATETIME DEFAULT CURRENT_TIMESTAMP,
             status TEXT DEFAULT 'Не оплачен',
+            approval_status TEXT DEFAULT 'approved',
+            created_by INTEGER,
+            approved_by INTEGER,
+            approved_at DATETIME,
             FOREIGN KEY (driver_id) REFERENCES drivers (id),
-            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id)
+            FOREIGN KEY (vehicle_id) REFERENCES vehicles (id),
+            FOREIGN KEY (created_by) REFERENCES users (id),
+            FOREIGN KEY (approved_by) REFERENCES users (id)
         )
     `;
 
@@ -82,14 +86,16 @@ function initDatabase() {
             address TEXT,
             phone TEXT,
             role TEXT DEFAULT 'user',
+            is_deleted INTEGER DEFAULT 0,
+            deleted_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
     `;
 
     db.run(driversTable);
     db.run(vehiclesTable);
-    db.run(violationsTable);
     db.run(usersTable);
+    db.run(violationsTable);
 
     // Добавляем отсутствующие колонки, если таблица уже существовала
     const addColumn = (column, type) => {
@@ -103,6 +109,22 @@ function initDatabase() {
     addColumn('address', 'TEXT');
     addColumn('phone', 'TEXT');
     addColumn('role', 'TEXT');
+    addColumn('is_deleted', 'INTEGER DEFAULT 0');
+    addColumn('deleted_at', 'DATETIME');
+
+    const addViolationColumn = (column, type, postQuery) => {
+        db.run(`ALTER TABLE violations ADD COLUMN ${column} ${type}`, (err) => {
+            if (err && !String(err.message).includes('duplicate column name')) {
+                console.warn('Ошибка добавления колонки нарушений', column, err.message);
+            } else if (!err && postQuery) {
+                db.run(postQuery, () => {});
+            }
+        });
+    };
+    addViolationColumn('approval_status', "TEXT DEFAULT 'approved'", "UPDATE violations SET approval_status = 'approved' WHERE approval_status IS NULL");
+    addViolationColumn('created_by', 'INTEGER', null);
+    addViolationColumn('approved_by', 'INTEGER', null);
+    addViolationColumn('approved_at', 'DATETIME', null);
 
     // Инициализация администратора через переменные окружения (опционально)
     const adminEmail = process.env.ADMIN_EMAIL;
@@ -143,13 +165,33 @@ function clearAuthCookie(res) {
 function requireAuth(req, res, next) {
     const token = req.cookies.token;
     if (!token) return res.status(401).json({ error: 'Требуется авторизация' });
+    let payload;
     try {
-        const payload = jwt.verify(token, JWT_SECRET);
-        req.user = payload;
-        next();
+        payload = jwt.verify(token, JWT_SECRET);
     } catch (e) {
         return res.status(401).json({ error: 'Недействительный токен' });
     }
+    db.get(
+        `SELECT id, email, name, avatar, address, phone, role, is_deleted FROM users WHERE id = ?`,
+        [payload.id],
+        (err, row) => {
+            if (err) return res.status(500).json({ error: 'Ошибка проверки пользователя' });
+            if (!row || row.is_deleted) {
+                clearAuthCookie(res);
+                return res.status(401).json({ error: 'Пользователь деактивирован' });
+            }
+            req.user = {
+                id: row.id,
+                email: row.email,
+                name: row.name,
+                avatar: row.avatar,
+                address: row.address,
+                phone: row.phone,
+                role: row.role || 'user'
+            };
+            next();
+        }
+    );
 }
 
 function requireAdmin(req, res, next) {
@@ -187,6 +229,7 @@ app.post('/api/auth/login', (req, res) => {
     db.get(`SELECT * FROM users WHERE email = ?`, [email.trim().toLowerCase()], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
         if (!row) return res.status(400).json({ error: 'Неверные учетные данные' });
+        if (row.is_deleted) return res.status(403).json({ error: 'Учетная запись деактивирована администратором' });
         const ok = bcrypt.compareSync(password, row.password_hash);
         if (!ok) return res.status(400).json({ error: 'Неверные учетные данные' });
         const user = { id: row.id, email: row.email, name: row.name, avatar: row.avatar, address: row.address, phone: row.phone, role: row.role || 'user' };
@@ -208,8 +251,29 @@ app.get('/api/auth/me', (req, res) => {
     if (!token) return res.json({ user: null });
     try {
         const payload = jwt.verify(token, JWT_SECRET);
-        return res.json({ user: { id: payload.id, email: payload.email, name: payload.name, avatar: payload.avatar || null, address: payload.address || null, phone: payload.phone || null, role: payload.role || 'user' } });
+        db.get(
+            `SELECT id, email, name, avatar, address, phone, role, is_deleted FROM users WHERE id = ?`,
+            [payload.id],
+            (err, row) => {
+                if (err || !row || row.is_deleted) {
+                    clearAuthCookie(res);
+                    return res.json({ user: null });
+                }
+                return res.json({
+                    user: {
+                        id: row.id,
+                        email: row.email,
+                        name: row.name,
+                        avatar: row.avatar || null,
+                        address: row.address || null,
+                        phone: row.phone || null,
+                        role: row.role || 'user'
+                    }
+                });
+            }
+        );
     } catch (e) {
+        clearAuthCookie(res);
         return res.json({ user: null });
     }
 });
@@ -217,7 +281,11 @@ app.get('/api/auth/me', (req, res) => {
 // ===== Пользователи (админ-функционал базовый) =====
 // Список пользователей (только админ)
 app.get('/api/users', requireAdmin, (req, res) => {
-    const sql = `SELECT id, email, name, created_at FROM users ORDER BY id DESC`;
+    const sql = `
+        SELECT id, email, name, role, address, phone, created_at, is_deleted, deleted_at
+        FROM users
+        ORDER BY is_deleted ASC, id DESC
+    `;
     db.all(sql, (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
@@ -250,7 +318,7 @@ app.put('/api/profile', requireAuth, (req, res) => {
     db.run(sql, [name || null, address || null, phone || null, avatarToSave || null, req.user.id], function(err) {
         if (err) return res.status(500).json({ error: err.message });
         // Возвращаем свежие данные пользователя
-        db.get(`SELECT id, email, name, avatar, address, phone FROM users WHERE id = ?`, [req.user.id], (e, row) => {
+        db.get(`SELECT id, email, name, avatar, address, phone, role FROM users WHERE id = ?`, [req.user.id], (e, row) => {
             if (e) return res.status(500).json({ error: e.message });
             const token = signToken(row);
             setAuthCookie(res, token);
@@ -265,10 +333,70 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
     if (parseInt(id) === parseInt(req.user.id)) {
         return res.status(400).json({ error: 'Нельзя удалить собственного пользователя' });
     }
-    db.run(`DELETE FROM users WHERE id = ?`, [id], function(err) {
+    db.get(`SELECT id, is_deleted FROM users WHERE id = ?`, [id], (err, row) => {
         if (err) return res.status(500).json({ error: err.message });
-        if (this.changes === 0) return res.status(404).json({ error: 'Пользователь не найден' });
-        res.json({ ok: true });
+        if (!row) return res.status(404).json({ error: 'Пользователь не найден' });
+        if (row.is_deleted) return res.status(400).json({ error: 'Пользователь уже деактивирован' });
+        db.run(`UPDATE users SET is_deleted = 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id], function(updateErr) {
+            if (updateErr) return res.status(500).json({ error: updateErr.message });
+            res.json({ ok: true, message: 'Пользователь деактивирован' });
+        });
+    });
+});
+
+app.patch('/api/users/:id/restore', requireAdmin, (req, res) => {
+    const { id } = req.params;
+    db.get(`SELECT id, is_deleted FROM users WHERE id = ?`, [id], (err, row) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!row) return res.status(404).json({ error: 'Пользователь не найден' });
+        if (!row.is_deleted) return res.status(400).json({ error: 'Пользователь уже активен' });
+        db.run(`UPDATE users SET is_deleted = 0, deleted_at = NULL WHERE id = ?`, [id], function(updateErr) {
+            if (updateErr) return res.status(500).json({ error: updateErr.message });
+            res.json({ ok: true, message: 'Пользователь восстановлен' });
+        });
+    });
+});
+
+app.put('/api/users/:id', requireAdmin, (req, res) => {
+    const { id } = req.params;
+    const { email, name, role, address, phone } = req.body || {};
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : null;
+    if (!normalizedEmail) return res.status(400).json({ error: 'Email обязателен' });
+    const safeRole = role === 'admin' ? 'admin' : 'user';
+
+    db.get(`SELECT id, is_deleted FROM users WHERE id = ?`, [id], (err, userRow) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!userRow) return res.status(404).json({ error: 'Пользователь не найден' });
+        db.get(`SELECT id FROM users WHERE email = ? AND id <> ?`, [normalizedEmail, id], (dupErr, dupRow) => {
+            if (dupErr) return res.status(500).json({ error: dupErr.message });
+            if (dupRow) return res.status(400).json({ error: 'Пользователь с таким email уже существует' });
+
+            db.run(
+                `UPDATE users
+                 SET email = ?, name = ?, role = ?, address = ?, phone = ?
+                 WHERE id = ?`,
+                [
+                    normalizedEmail,
+                    name ? name.trim() : null,
+                    safeRole,
+                    address ? address.trim() : null,
+                    phone ? phone.trim() : null,
+                    id
+                ],
+                function(updateErr) {
+                    if (updateErr) return res.status(500).json({ error: updateErr.message });
+                    db.get(
+                        `SELECT id, email, name, role, address, phone, created_at, is_deleted, deleted_at
+                         FROM users WHERE id = ?`,
+                        [id],
+                        (finalErr, updatedRow) => {
+                            if (finalErr) return res.status(500).json({ error: finalErr.message });
+                            res.json({ ok: true, user: updatedRow });
+                        }
+                    );
+                }
+            );
+        });
     });
 });
 
@@ -393,16 +521,33 @@ app.post('/api/vehicles', requireAuth, (req, res) => {
 // Добавить нарушение (требуется авторизация)
 app.post('/api/violations', requireAuth, (req, res) => {
     const { driverId, vehicleId, violationType, fineAmount } = req.body;
-    
+    if (!driverId || !vehicleId || !violationType) {
+        return res.status(400).json({ error: 'Необходимо указать водителя, автомобиль и тип нарушения' });
+    }
+
+    const driver = Number(driverId);
+    const vehicle = Number(vehicleId);
+    if (!Number.isFinite(driver) || !Number.isFinite(vehicle)) {
+        return res.status(400).json({ error: 'Некорректные идентификаторы водителя или автомобиля' });
+    }
+
+    const isAdmin = req.user.role === 'admin';
+    const approvalStatus = isAdmin ? 'approved' : 'pending';
+    const statusValue = isAdmin ? 'Не оплачен' : 'Ожидает утверждения';
+    const approvedBy = isAdmin ? req.user.id : null;
+    const approvedAt = isAdmin ? new Date().toISOString() : null;
+    const fineValue = typeof fineAmount === 'number' && Number.isFinite(fineAmount) ? fineAmount : null;
+
     db.run(
-        "INSERT INTO violations (driver_id, vehicle_id, violation_type, fine_amount) VALUES (?, ?, ?, ?)",
-        [driverId, vehicleId, violationType, fineAmount],
+        `INSERT INTO violations (driver_id, vehicle_id, violation_type, fine_amount, status, created_by, approval_status, approved_by, approved_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [driver, vehicle, violationType, fineValue, statusValue, req.user.id, approvalStatus, approvedBy, approvedAt],
         function(err) {
             if (err) {
-                res.status(500).json({ error: err.message });
-                return;
+                return res.status(500).json({ error: err.message });
             }
-            res.json({ id: this.lastID, message: 'Нарушение успешно добавлено' });
+            const message = isAdmin ? 'Нарушение успешно добавлено' : 'Нарушение отправлено на утверждение администратору';
+            res.json({ id: this.lastID, message, approvalStatus });
         }
     );
 });
@@ -432,12 +577,13 @@ app.get('/api/statistics', (req, res) => {
     const queries = {
         drivers: "SELECT COUNT(*) as count FROM drivers",
         vehicles: "SELECT COUNT(*) as count FROM vehicles",
-        violations: "SELECT COUNT(*) as count, SUM(fine_amount) as total_fines FROM violations",
+        violations: "SELECT COUNT(*) as count, SUM(fine_amount) as total_fines FROM violations WHERE approval_status = 'approved'",
         recentViolations: `
             SELECT v.*, d.full_name, ve.license_plate 
             FROM violations v 
             LEFT JOIN drivers d ON v.driver_id = d.id 
             LEFT JOIN vehicles ve ON v.vehicle_id = ve.id 
+            WHERE v.approval_status = 'approved'
             ORDER BY v.violation_date DESC LIMIT 5
         `
     };
@@ -460,10 +606,21 @@ app.get('/api/statistics', (req, res) => {
 // Получить все нарушения
 app.get('/api/violations', (req, res) => {
     const sql = `
-        SELECT v.*, d.full_name, ve.license_plate, ve.brand, ve.model 
+        SELECT 
+            v.*, 
+            d.full_name, 
+            ve.license_plate, 
+            ve.brand, 
+            ve.model,
+            creator.name AS creator_name,
+            creator.email AS creator_email,
+            approver.name AS approver_name,
+            approver.email AS approver_email
         FROM violations v 
         LEFT JOIN drivers d ON v.driver_id = d.id 
         LEFT JOIN vehicles ve ON v.vehicle_id = ve.id 
+        LEFT JOIN users creator ON creator.id = v.created_by
+        LEFT JOIN users approver ON approver.id = v.approved_by
         ORDER BY v.violation_date DESC
     `;
     
@@ -542,30 +699,106 @@ app.delete('/api/vehicles/:id', requireAuth, (req, res) => {
 app.put('/api/violations/:id', requireAuth, (req, res) => {
     const { id } = req.params;
     const { driverId, vehicleId, violationType, fineAmount, status } = req.body;
-    
-    db.run(
-        "UPDATE violations SET driver_id = ?, vehicle_id = ?, violation_type = ?, fine_amount = ?, status = ? WHERE id = ?",
-        [driverId, vehicleId, violationType, fineAmount, status, id],
-        function(err) {
-            if (err) {
-                res.status(500).json({ error: err.message });
-                return;
+
+    db.get(`SELECT * FROM violations WHERE id = ?`, [id], (err, violation) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!violation) return res.status(404).json({ error: 'Нарушение не найдено' });
+
+        const isAdmin = req.user.role === 'admin';
+        const isCreator = violation.created_by && Number(violation.created_by) === Number(req.user.id);
+        if (!isAdmin) {
+            if (!isCreator) {
+                return res.status(403).json({ error: 'Недостаточно прав для редактирования нарушения' });
             }
-            res.json({ message: 'Нарушение успешно обновлено' });
+            if (violation.approval_status !== 'pending') {
+                return res.status(403).json({ error: 'Редактирование возможно только до утверждения администратора' });
+            }
         }
-    );
+
+        const normalizeInt = (value, fallback) => {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : fallback;
+        };
+        const normalizeNumber = (value, fallback) => {
+            const num = Number(value);
+            return Number.isFinite(num) ? num : fallback;
+        };
+
+        const targetDriver = normalizeInt(driverId, violation.driver_id);
+        const targetVehicle = normalizeInt(vehicleId, violation.vehicle_id);
+        const targetType = violationType ?? violation.violation_type;
+        const targetFine = normalizeNumber(fineAmount, violation.fine_amount);
+        const targetStatus = isAdmin ? (status || violation.status) : 'Ожидает утверждения';
+
+        let targetApproval = violation.approval_status || 'approved';
+        let targetApprovedBy = violation.approved_by || null;
+        let targetApprovedAt = violation.approved_at || null;
+        if (!isAdmin) {
+            targetApproval = 'pending';
+            targetApprovedBy = null;
+            targetApprovedAt = null;
+        }
+
+        db.run(
+            `UPDATE violations
+             SET driver_id = ?, vehicle_id = ?, violation_type = ?, fine_amount = ?, status = ?, approval_status = ?, approved_by = ?, approved_at = ?
+             WHERE id = ?`,
+            [targetDriver, targetVehicle, targetType, targetFine, targetStatus, targetApproval, targetApprovedBy, targetApprovedAt, id],
+            function(updateErr) {
+                if (updateErr) return res.status(500).json({ error: updateErr.message });
+                res.json({ message: 'Нарушение успешно обновлено' });
+            }
+        );
+    });
 });
 
 // Удалить нарушение (требуется авторизация)
 app.delete('/api/violations/:id', requireAuth, (req, res) => {
     const { id } = req.params;
-    
-    db.run("DELETE FROM violations WHERE id = ?", [id], function(err) {
-        if (err) {
-            res.status(500).json({ error: err.message });
-            return;
+
+    db.get(`SELECT * FROM violations WHERE id = ?`, [id], (err, violation) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!violation) return res.status(404).json({ error: 'Нарушение не найдено' });
+
+        const isAdmin = req.user.role === 'admin';
+        const isCreator = violation.created_by && Number(violation.created_by) === Number(req.user.id);
+        if (!isAdmin) {
+            if (!isCreator || violation.approval_status !== 'pending') {
+                return res.status(403).json({ error: 'Удаление доступно только администратору или автору до утверждения' });
+            }
         }
-        res.json({ message: 'Нарушение успешно удалено' });
+
+        db.run("DELETE FROM violations WHERE id = ?", [id], function(deleteErr) {
+            if (deleteErr) return res.status(500).json({ error: deleteErr.message });
+            res.json({ message: 'Нарушение успешно удалено' });
+        });
+    });
+});
+
+app.patch('/api/violations/:id/approve', requireAdmin, (req, res) => {
+    const { id } = req.params;
+    db.get(`SELECT * FROM violations WHERE id = ?`, [id], (err, violation) => {
+        if (err) return res.status(500).json({ error: err.message });
+        if (!violation) return res.status(404).json({ error: 'Нарушение не найдено' });
+        if (violation.approval_status === 'approved') {
+            return res.status(400).json({ error: 'Нарушение уже утверждено' });
+        }
+
+        const statusValue = violation.status && violation.status !== 'Ожидает утверждения'
+            ? violation.status
+            : 'Не оплачен';
+        const approvedAt = new Date().toISOString();
+
+        db.run(
+            `UPDATE violations
+             SET approval_status = 'approved', approved_by = ?, approved_at = ?, status = ?
+             WHERE id = ?`,
+            [req.user.id, approvedAt, statusValue, id],
+            function(updateErr) {
+                if (updateErr) return res.status(500).json({ error: updateErr.message });
+                res.json({ message: 'Нарушение утверждено', approvedAt, status: statusValue });
+            }
+        );
     });
 });
 
@@ -578,48 +811,6 @@ app.post('/api/export', (req, res) => {
             return res.status(400).json({ error: 'Некорректные данные для экспорта' });
         }
         const safeTitle = String(title || 'export').replace(/[^\wа-яА-Я\- _]+/g, '').trim() || 'export';
-
-        if (format === 'txt') {
-            const header = columns.map(c => c.title).join('\t');
-            const lines = rows.map(r => columns.map(c => (r[c.key] ?? '').toString().replace(/\n/g, ' ')).join('\t'));
-            const content = [header, ...lines].join('\n');
-            res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="${safeTitle}.txt"`);
-            return res.send(content);
-        }
-
-        if (format === 'pdf') {
-            res.setHeader('Content-Type', 'application/pdf');
-            const asciiNamePdf = 'export.pdf';
-            const utfNamePdf = encodeURIComponent(`${safeTitle}.pdf`);
-            res.setHeader('Content-Disposition', `attachment; filename="${asciiNamePdf}"; filename*=UTF-8''${utfNamePdf}`);
-            const doc = new PDFDocument({ margin: 40, size: 'A4' });
-            doc.pipe(res);
-            doc.fontSize(16).text(title || 'Экспорт данных', { align: 'left' });
-            doc.moveDown();
-
-            // Простейшая табличная отрисовка: заголовки + строки с разделителями
-            const colWidths = columns.map(() => Math.floor((doc.page.width - doc.page.margins.left - doc.page.margins.right) / columns.length));
-            const drawRow = (cells, isHeader) => {
-                cells.forEach((cell, idx) => {
-                    const text = String(cell ?? '');
-                    const opts = { width: colWidths[idx], continued: idx < cells.length - 1 };
-                    if (isHeader) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
-                    doc.fontSize(10).text(text, opts);
-                });
-                doc.moveDown(0.5);
-            };
-            try {
-                drawRow(columns.map(c => c.title), true);
-                rows.forEach(r => drawRow(columns.map(c => r[c.key] ?? ''), false));
-            } catch (e) {
-                console.error('PDF export error:', e);
-                doc.text('Ошибка формирования PDF');
-            }
-
-            doc.end();
-            return;
-        }
 
         if (format === 'docx') {
             try {
