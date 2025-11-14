@@ -92,9 +92,21 @@
                     <div style="display: flex; gap: .5rem; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">Список водителей</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button id="sortDriversBtn" onclick="sortDrivers()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
                             <button onclick="exportData('drivers','docx')" title="DOCX" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
                         </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="driversSearchInput" placeholder="🔍 Поиск по ФИО, номеру прав, адресу, телефону..." style="flex: 1; min-width: 200px; padding: 0.5rem;">
+                        <select id="driversSortSelect" style="padding: 0.5rem;">
+                            <option value="">Сортировка...</option>
+                            <option value="violations_count_desc">По количеству нарушений (↓)</option>
+                            <option value="violations_count_asc">По количеству нарушений (↑)</option>
+                            <option value="last_violation_desc">По дате последнего нарушения (↓)</option>
+                            <option value="last_violation_asc">По дате последнего нарушения (↑)</option>
+                            <option value="name_asc">По алфавиту (А-Я)</option>
+                            <option value="name_desc">По алфавиту (Я-А)</option>
+                        </select>
+                        <button onclick="clearDriversFilters()" style="background: #dc3545; padding: 0.5rem 1rem;">🗑️ Очистить</button>
                     </div>
                     <div id="driversList"></div>
                 </div>
@@ -120,9 +132,19 @@
                     <div style="display: flex; gap:.5rem; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">Список автомобилей</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button id="sortVehiclesBtn" onclick="sortVehicles()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
                             <button onclick="exportData('vehicles','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
                         </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="vehiclesSearchInput" placeholder="🔍 Поиск по госномеру, марке, модели..." style="flex: 1; min-width: 200px; padding: 0.5rem;">
+                        <select id="vehiclesSortSelect" style="padding: 0.5rem;">
+                            <option value="">Сортировка...</option>
+                            <option value="brand_asc">По марке (А-Я)</option>
+                            <option value="brand_desc">По марке (Я-А)</option>
+                            <option value="violations_count_desc">По количеству нарушений (↓)</option>
+                            <option value="violations_count_asc">По количеству нарушений (↑)</option>
+                        </select>
+                        <button onclick="clearVehiclesFilters()" style="background: #dc3545; padding: 0.5rem 1rem;">🗑️ Очистить</button>
                     </div>
                     <div id="vehiclesList"></div>
                 </div>
@@ -147,9 +169,21 @@
                     <div style="display: flex; gap:.5rem; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">Список нарушений</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button id="sortViolationsBtn" onclick="sortViolations()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
                             <button onclick="exportData('violations','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
                         </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="violationsSearchInput" placeholder="🔍 Поиск по водителю, автомобилю, типу нарушения..." style="flex: 1; min-width: 200px; padding: 0.5rem;">
+                        <select id="violationsSortSelect" style="padding: 0.5rem;">
+                            <option value="">Сортировка...</option>
+                            <option value="date_desc">По дате (↓)</option>
+                            <option value="date_asc">По дате (↑)</option>
+                            <option value="fine_desc">По сумме штрафа (↓)</option>
+                            <option value="fine_asc">По сумме штрафа (↑)</option>
+                            <option value="driver_asc">По водителю (А-Я)</option>
+                            <option value="driver_desc">По водителю (Я-А)</option>
+                        </select>
+                        <button onclick="clearViolationsFilters()" style="background: #dc3545; padding: 0.5rem 1rem;">🗑️ Очистить</button>
                     </div>
                     <div id="violationsList"></div>
                 </div>
