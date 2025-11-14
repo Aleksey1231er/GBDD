@@ -3,30 +3,37 @@ let currentSection = 'main';
 let currentDeleteAction = null;
 let currentUser = null;
 
-// Состояние сортировки
+// Состояние данных
 let driversData = [];
 let vehiclesData = [];
 let violationsData = [];
 let searchResultsData = [];
 let usersData = [];
-let driversSorted = false;
-let vehiclesSorted = false;
-let violationsSorted = false;
+
+// Состояние фильтров и сортировки
+let driversFilters = { search: '', sort: '' };
+let vehiclesFilters = { search: '', sort: '' };
+let violationsFilters = { search: '', sort: '' };
 
 // Инициализация при загрузке страницы
 document.addEventListener('DOMContentLoaded', function() {
     showSection('main');
     checkAuth();
-    loadStatistics();
-    loadDrivers();
-    loadVehicles();
-    loadViolations();
     
     // Обработчики форм
     document.getElementById('addDriverForm').addEventListener('submit', addDriver);
     document.getElementById('addVehicleForm').addEventListener('submit', addVehicle);
     document.getElementById('addViolationForm').addEventListener('submit', addViolation);
     document.getElementById('searchForm').addEventListener('submit', searchDrivers);
+    
+    // Обработчики фильтров и сортировки (должно быть до загрузки данных)
+    setupFiltersAndSorting();
+    
+    // Загружаем данные после настройки фильтров
+    loadStatistics();
+    loadDrivers();
+    loadVehicles();
+    loadViolations();
 
     // Авторизация
     document.getElementById('loginForm').addEventListener('submit', login);
@@ -98,6 +105,242 @@ function showSection(sectionName) {
     } else if (sectionName === 'users') {
         loadUsers();
     }
+}
+
+// Настройка фильтров и сортировки
+function setupFiltersAndSorting() {
+    // Загрузка сохраненных фильтров из localStorage
+    loadFiltersFromStorage();
+    
+    // Водители
+    const driversSearchInput = document.getElementById('driversSearchInput');
+    const driversSortSelect = document.getElementById('driversSortSelect');
+    if (driversSearchInput) {
+        driversSearchInput.value = driversFilters.search;
+        driversSearchInput.addEventListener('input', (e) => {
+            driversFilters.search = e.target.value;
+            saveFiltersToStorage();
+            renderDriversTable();
+        });
+    }
+    if (driversSortSelect) {
+        driversSortSelect.value = driversFilters.sort;
+        driversSortSelect.addEventListener('change', (e) => {
+            driversFilters.sort = e.target.value;
+            saveFiltersToStorage();
+            renderDriversTable();
+        });
+    }
+    
+    // Автомобили
+    const vehiclesSearchInput = document.getElementById('vehiclesSearchInput');
+    const vehiclesSortSelect = document.getElementById('vehiclesSortSelect');
+    if (vehiclesSearchInput) {
+        vehiclesSearchInput.value = vehiclesFilters.search;
+        vehiclesSearchInput.addEventListener('input', (e) => {
+            vehiclesFilters.search = e.target.value;
+            saveFiltersToStorage();
+            renderVehiclesTable();
+        });
+    }
+    if (vehiclesSortSelect) {
+        vehiclesSortSelect.value = vehiclesFilters.sort;
+        vehiclesSortSelect.addEventListener('change', (e) => {
+            vehiclesFilters.sort = e.target.value;
+            saveFiltersToStorage();
+            renderVehiclesTable();
+        });
+    }
+    
+    // Нарушения
+    const violationsSearchInput = document.getElementById('violationsSearchInput');
+    const violationsSortSelect = document.getElementById('violationsSortSelect');
+    if (violationsSearchInput) {
+        violationsSearchInput.value = violationsFilters.search;
+        violationsSearchInput.addEventListener('input', (e) => {
+            violationsFilters.search = e.target.value;
+            saveFiltersToStorage();
+            renderViolationsTable();
+        });
+    }
+    if (violationsSortSelect) {
+        violationsSortSelect.value = violationsFilters.sort;
+        violationsSortSelect.addEventListener('change', (e) => {
+            violationsFilters.sort = e.target.value;
+            saveFiltersToStorage();
+            renderViolationsTable();
+        });
+    }
+}
+
+// Сохранение фильтров в localStorage
+function saveFiltersToStorage() {
+    const userId = currentUser ? currentUser.id : 'guest';
+    localStorage.setItem(`filters_drivers_${userId}`, JSON.stringify(driversFilters));
+    localStorage.setItem(`filters_vehicles_${userId}`, JSON.stringify(vehiclesFilters));
+    localStorage.setItem(`filters_violations_${userId}`, JSON.stringify(violationsFilters));
+}
+
+// Загрузка фильтров из localStorage
+function loadFiltersFromStorage() {
+    const userId = currentUser ? currentUser.id : 'guest';
+    const savedDrivers = localStorage.getItem(`filters_drivers_${userId}`);
+    const savedVehicles = localStorage.getItem(`filters_vehicles_${userId}`);
+    const savedViolations = localStorage.getItem(`filters_violations_${userId}`);
+    
+    if (savedDrivers) {
+        try {
+            driversFilters = JSON.parse(savedDrivers);
+        } catch (e) {
+            driversFilters = { search: '', sort: '' };
+        }
+    }
+    if (savedVehicles) {
+        try {
+            vehiclesFilters = JSON.parse(savedVehicles);
+        } catch (e) {
+            vehiclesFilters = { search: '', sort: '' };
+        }
+    }
+    if (savedViolations) {
+        try {
+            violationsFilters = JSON.parse(savedViolations);
+        } catch (e) {
+            violationsFilters = { search: '', sort: '' };
+        }
+    }
+}
+
+// Очистка фильтров
+function clearDriversFilters() {
+    driversFilters = { search: '', sort: '' };
+    document.getElementById('driversSearchInput').value = '';
+    document.getElementById('driversSortSelect').value = '';
+    saveFiltersToStorage();
+    renderDriversTable();
+}
+
+function clearVehiclesFilters() {
+    vehiclesFilters = { search: '', sort: '' };
+    document.getElementById('vehiclesSearchInput').value = '';
+    document.getElementById('vehiclesSortSelect').value = '';
+    saveFiltersToStorage();
+    renderVehiclesTable();
+}
+
+function clearViolationsFilters() {
+    violationsFilters = { search: '', sort: '' };
+    document.getElementById('violationsSearchInput').value = '';
+    document.getElementById('violationsSortSelect').value = '';
+    saveFiltersToStorage();
+    renderViolationsTable();
+}
+
+// Вспомогательные функции для сортировки
+function applyDriversSort(data, sortType) {
+    if (!sortType) return data;
+    const sorted = [...data];
+    switch (sortType) {
+        case 'violations_count_desc':
+            sorted.sort((a, b) => b.violations_count - a.violations_count);
+            break;
+        case 'violations_count_asc':
+            sorted.sort((a, b) => a.violations_count - b.violations_count);
+            break;
+        case 'last_violation_desc':
+            sorted.sort((a, b) => {
+                if (!a.last_violation_date && !b.last_violation_date) return 0;
+                if (!a.last_violation_date) return 1;
+                if (!b.last_violation_date) return -1;
+                return b.last_violation_date - a.last_violation_date;
+            });
+            break;
+        case 'last_violation_asc':
+            sorted.sort((a, b) => {
+                if (!a.last_violation_date && !b.last_violation_date) return 0;
+                if (!a.last_violation_date) return 1;
+                if (!b.last_violation_date) return -1;
+                return a.last_violation_date - b.last_violation_date;
+            });
+            break;
+        case 'name_asc':
+            sorted.sort((a, b) => {
+                const nameA = (a.full_name || '').toLowerCase();
+                const nameB = (b.full_name || '').toLowerCase();
+                return nameA.localeCompare(nameB, 'ru');
+            });
+            break;
+        case 'name_desc':
+            sorted.sort((a, b) => {
+                const nameA = (a.full_name || '').toLowerCase();
+                const nameB = (b.full_name || '').toLowerCase();
+                return nameB.localeCompare(nameA, 'ru');
+            });
+            break;
+    }
+    return sorted;
+}
+
+function applyVehiclesSort(data, sortType) {
+    if (!sortType) return data;
+    const sorted = [...data];
+    switch (sortType) {
+        case 'brand_asc':
+            sorted.sort((a, b) => {
+                const brandA = (a.brand || '').toLowerCase();
+                const brandB = (b.brand || '').toLowerCase();
+                return brandA.localeCompare(brandB, 'ru');
+            });
+            break;
+        case 'brand_desc':
+            sorted.sort((a, b) => {
+                const brandA = (a.brand || '').toLowerCase();
+                const brandB = (b.brand || '').toLowerCase();
+                return brandB.localeCompare(brandA, 'ru');
+            });
+            break;
+        case 'violations_count_desc':
+            sorted.sort((a, b) => b.violations_count - a.violations_count);
+            break;
+        case 'violations_count_asc':
+            sorted.sort((a, b) => a.violations_count - b.violations_count);
+            break;
+    }
+    return sorted;
+}
+
+function applyViolationsSort(data, sortType) {
+    if (!sortType) return data;
+    const sorted = [...data];
+    switch (sortType) {
+        case 'date_desc':
+            sorted.sort((a, b) => new Date(b.violation_date) - new Date(a.violation_date));
+            break;
+        case 'date_asc':
+            sorted.sort((a, b) => new Date(a.violation_date) - new Date(b.violation_date));
+            break;
+        case 'fine_desc':
+            sorted.sort((a, b) => (b.fine_amount || 0) - (a.fine_amount || 0));
+            break;
+        case 'fine_asc':
+            sorted.sort((a, b) => (a.fine_amount || 0) - (b.fine_amount || 0));
+            break;
+        case 'driver_asc':
+            sorted.sort((a, b) => {
+                const nameA = (a.full_name || '').toLowerCase();
+                const nameB = (b.full_name || '').toLowerCase();
+                return nameA.localeCompare(nameB, 'ru');
+            });
+            break;
+        case 'driver_desc':
+            sorted.sort((a, b) => {
+                const nameA = (a.full_name || '').toLowerCase();
+                const nameB = (b.full_name || '').toLowerCase();
+                return nameB.localeCompare(nameA, 'ru');
+            });
+            break;
+    }
+    return sorted;
 }
 
 // ==== Простой кроппер на canvas ====
@@ -195,7 +438,28 @@ async function checkAuth() {
     try {
         const res = await fetch('/api/auth/me');
         const data = await res.json();
+        const previousUser = currentUser;
         currentUser = data.user;
+        
+        // Если пользователь изменился, перезагружаем фильтры
+        if (!previousUser || (previousUser && previousUser.id !== currentUser?.id)) {
+            loadFiltersFromStorage();
+            // Обновляем значения в полях фильтров
+            const driversSearchInput = document.getElementById('driversSearchInput');
+            const driversSortSelect = document.getElementById('driversSortSelect');
+            const vehiclesSearchInput = document.getElementById('vehiclesSearchInput');
+            const vehiclesSortSelect = document.getElementById('vehiclesSortSelect');
+            const violationsSearchInput = document.getElementById('violationsSearchInput');
+            const violationsSortSelect = document.getElementById('violationsSortSelect');
+            
+            if (driversSearchInput) driversSearchInput.value = driversFilters.search;
+            if (driversSortSelect) driversSortSelect.value = driversFilters.sort;
+            if (vehiclesSearchInput) vehiclesSearchInput.value = vehiclesFilters.search;
+            if (vehiclesSortSelect) vehiclesSortSelect.value = vehiclesFilters.sort;
+            if (violationsSearchInput) violationsSearchInput.value = violationsFilters.search;
+            if (violationsSortSelect) violationsSortSelect.value = violationsFilters.sort;
+        }
+        
         updateAuthUI();
     } catch {}
 }
@@ -420,14 +684,37 @@ async function loadDrivers() {
 
 // Отрисовка таблицы водителей
 function renderDriversTable() {
-    let drivers = driversSorted ? [...driversData].sort((a, b) => {
-        const nameA = (a.full_name || '').toLowerCase();
-        const nameB = (b.full_name || '').toLowerCase();
-        return nameA.localeCompare(nameB, 'ru');
-    }) : driversData;
+    // Вычисляем количество нарушений и дату последнего нарушения для каждого водителя
+    const driversWithStats = driversData.map(driver => {
+        const driverViolations = violationsData.filter(v => v.driver_id === driver.id);
+        const violationsCount = driverViolations.length;
+        const lastViolation = driverViolations.length > 0 
+            ? driverViolations.sort((a, b) => new Date(b.violation_date) - new Date(a.violation_date))[0]
+            : null;
+        return {
+            ...driver,
+            violations_count: violationsCount,
+            last_violation_date: lastViolation ? new Date(lastViolation.violation_date) : null
+        };
+    });
+    
+    // Применяем фильтр поиска
+    let filtered = driversWithStats;
+    if (driversFilters.search) {
+        const searchLower = driversFilters.search.toLowerCase();
+        filtered = driversWithStats.filter(driver => 
+            (driver.full_name || '').toLowerCase().includes(searchLower) ||
+            (driver.license_number || '').toLowerCase().includes(searchLower) ||
+            (driver.address || '').toLowerCase().includes(searchLower) ||
+            (driver.phone || '').toLowerCase().includes(searchLower)
+        );
+    }
+    
+    // Применяем сортировку
+    let sorted = applyDriversSort(filtered, driversFilters.sort);
     
     let html = '';
-    if (drivers.length > 0) {
+    if (sorted.length > 0) {
         html = `
             <table>
                 <thead>
@@ -437,18 +724,22 @@ function renderDriversTable() {
                         <th>Номер прав</th>
                         <th>Адрес</th>
                         <th>Телефон</th>
+                        <th>Нарушений</th>
+                        <th>Последнее нарушение</th>
                         <th>Дата регистрации</th>
                         <th>Действия</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${drivers.map(driver => `
+                    ${sorted.map(driver => `
                         <tr>
                             <td>${driver.id}</td>
                             <td>${driver.full_name}</td>
                             <td>${driver.license_number}</td>
                             <td>${driver.address || '-'}</td>
                             <td>${driver.phone || '-'}</td>
+                            <td>${driver.violations_count}</td>
+                            <td>${driver.last_violation_date ? driver.last_violation_date.toLocaleDateString() : '-'}</td>
                             <td>${new Date(driver.created_date).toLocaleDateString()}</td>
                             <td class="actions">
                                 <button class="btn-edit" onclick="editDriver(${driver.id})" title="Редактировать">✏️</button>
@@ -460,20 +751,11 @@ function renderDriversTable() {
             </table>
         `;
     } else {
-        html = '<p>Нет зарегистрированных водителей</p>';
+        html = '<p>Нет зарегистрированных водителей' + (driversFilters.search ? ' (по вашему запросу)' : '') + '</p>';
     }
     
     document.getElementById('driversList').innerHTML = html;
     updateAuthUI();
-}
-
-// Сортировка водителей
-function sortDrivers() {
-    driversSorted = !driversSorted;
-    const btn = document.getElementById('sortDriversBtn');
-    btn.textContent = driversSorted ? '🔤 Отменить сортировку' : '🔤 Сортировать по алфавиту';
-    btn.style.background = driversSorted ? '#28a745' : '#6c757d';
-    renderDriversTable();
 }
 
 // Добавление водителя
@@ -501,12 +783,6 @@ async function addDriver(event) {
         if (response.ok) {
             showAlert('Водитель успешно добавлен!', 'success');
             document.getElementById('addDriverForm').reset();
-            driversSorted = false;
-            const btn = document.getElementById('sortDriversBtn');
-            if (btn) {
-                btn.textContent = '🔤 Сортировать по алфавиту';
-                btn.style.background = '#6c757d';
-            }
             loadDrivers();
             loadStatistics();
         } else {
@@ -534,14 +810,32 @@ async function loadVehicles() {
 
 // Отрисовка таблицы автомобилей
 function renderVehiclesTable() {
-    let vehicles = vehiclesSorted ? [...vehiclesData].sort((a, b) => {
-        const plateA = (a.license_plate || '').toLowerCase();
-        const plateB = (b.license_plate || '').toLowerCase();
-        return plateA.localeCompare(plateB, 'ru');
-    }) : vehiclesData;
+    // Вычисляем количество нарушений для каждого автомобиля
+    const vehiclesWithStats = vehiclesData.map(vehicle => {
+        const vehicleViolations = violationsData.filter(v => v.vehicle_id === vehicle.id);
+        return {
+            ...vehicle,
+            violations_count: vehicleViolations.length
+        };
+    });
+    
+    // Применяем фильтр поиска
+    let filtered = vehiclesWithStats;
+    if (vehiclesFilters.search) {
+        const searchLower = vehiclesFilters.search.toLowerCase();
+        filtered = vehiclesWithStats.filter(vehicle => 
+            (vehicle.license_plate || '').toLowerCase().includes(searchLower) ||
+            (vehicle.brand || '').toLowerCase().includes(searchLower) ||
+            (vehicle.model || '').toLowerCase().includes(searchLower) ||
+            (vehicle.owner_name || '').toLowerCase().includes(searchLower)
+        );
+    }
+    
+    // Применяем сортировку
+    let sorted = applyVehiclesSort(filtered, vehiclesFilters.sort);
     
     let html = '';
-    if (vehicles.length > 0) {
+    if (sorted.length > 0) {
         html = `
             <table>
                 <thead>
@@ -552,12 +846,13 @@ function renderVehiclesTable() {
                         <th>Модель</th>
                         <th>Год</th>
                         <th>Владелец</th>
+                        <th>Нарушений</th>
                         <th>Дата регистрации</th>
                         <th>Действия</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${vehicles.map(vehicle => `
+                    ${sorted.map(vehicle => `
                         <tr>
                             <td>${vehicle.id}</td>
                             <td>${vehicle.license_plate}</td>
@@ -565,6 +860,7 @@ function renderVehiclesTable() {
                             <td>${vehicle.model}</td>
                             <td>${vehicle.year || '-'}</td>
                             <td>${vehicle.owner_name || `ID: ${vehicle.owner_id}`}</td>
+                            <td>${vehicle.violations_count}</td>
                             <td>${new Date(vehicle.created_date).toLocaleDateString()}</td>
                             <td class="actions">
                                 <button class="btn-edit" onclick="editVehicle(${vehicle.id})" title="Редактировать">✏️</button>
@@ -576,20 +872,11 @@ function renderVehiclesTable() {
             </table>
         `;
     } else {
-        html = '<p>Нет зарегистрированных автомобилей</p>';
+        html = '<p>Нет зарегистрированных автомобилей' + (vehiclesFilters.search ? ' (по вашему запросу)' : '') + '</p>';
     }
     
     document.getElementById('vehiclesList').innerHTML = html;
     updateAuthUI();
-}
-
-// Сортировка автомобилей
-function sortVehicles() {
-    vehiclesSorted = !vehiclesSorted;
-    const btn = document.getElementById('sortVehiclesBtn');
-    btn.textContent = vehiclesSorted ? '🔤 Отменить сортировку' : '🔤 Сортировать по алфавиту';
-    btn.style.background = vehiclesSorted ? '#28a745' : '#6c757d';
-    renderVehiclesTable();
 }
 
 // Добавление автомобиля
@@ -648,12 +935,6 @@ async function addVehicle(event) {
         if (response.ok) {
             showAlert('Автомобиль успешно добавлен!', 'success');
             document.getElementById('addVehicleForm').reset();
-            vehiclesSorted = false;
-            const btn = document.getElementById('sortVehiclesBtn');
-            if (btn) {
-                btn.textContent = '🔤 Сортировать по алфавиту';
-                btn.style.background = '#6c757d';
-            }
             loadVehicles();
             loadStatistics();
         } else {
@@ -677,6 +958,13 @@ async function loadViolations() {
         violationsData = violations;
         
         renderViolationsTable();
+        // Перерисовываем таблицы водителей и автомобилей, так как они зависят от данных нарушений
+        if (currentSection === 'drivers') {
+            renderDriversTable();
+        }
+        if (currentSection === 'vehicles') {
+            renderVehiclesTable();
+        }
         updateAuthUI();
     } catch (error) {
         console.error('Ошибка загрузки нарушений:', error);
@@ -687,11 +975,25 @@ async function loadViolations() {
 // Отрисовка таблицы нарушений
 function renderViolationsTable() {
     const isAdmin = currentUser && currentUser.role === 'admin';
-    let violations = violationsSorted ? [...violationsData].sort((a, b) => {
-        const typeA = (a.violation_type || '').toLowerCase();
-        const typeB = (b.violation_type || '').toLowerCase();
-        return typeA.localeCompare(typeB, 'ru');
-    }) : violationsData;
+    
+    // Применяем фильтр поиска
+    let filtered = violationsData;
+    if (violationsFilters.search) {
+        const searchLower = violationsFilters.search.toLowerCase();
+        filtered = violationsData.filter(violation => 
+            (violation.full_name || '').toLowerCase().includes(searchLower) ||
+            (violation.license_plate || '').toLowerCase().includes(searchLower) ||
+            (violation.brand || '').toLowerCase().includes(searchLower) ||
+            (violation.model || '').toLowerCase().includes(searchLower) ||
+            (violation.violation_type || '').toLowerCase().includes(searchLower) ||
+            (violation.fine_amount || '').toString().includes(searchLower)
+        );
+    }
+    
+    // Применяем сортировку
+    let sorted = applyViolationsSort(filtered, violationsFilters.sort);
+    
+    let violations = sorted;
     
     let html = '';
     if (violations.length > 0) {
@@ -755,20 +1057,11 @@ function renderViolationsTable() {
             </table>
         `;
     } else {
-        html = '<p>Нет зарегистрированных нарушений</p>';
+        html = '<p>Нет зарегистрированных нарушений' + (violationsFilters.search ? ' (по вашему запросу)' : '') + '</p>';
     }
     
     document.getElementById('violationsList').innerHTML = html;
     updateAuthUI();
-}
-
-// Сортировка нарушений
-function sortViolations() {
-    violationsSorted = !violationsSorted;
-    const btn = document.getElementById('sortViolationsBtn');
-    btn.textContent = violationsSorted ? '🔤 Отменить сортировку' : '🔤 Сортировать по алфавиту';
-    btn.style.background = violationsSorted ? '#28a745' : '#6c757d';
-    renderViolationsTable();
 }
 
 // Добавление нарушения
@@ -796,12 +1089,6 @@ async function addViolation(event) {
         if (response.ok) {
             showAlert(result.message || 'Нарушение успешно добавлено!', 'success');
             document.getElementById('addViolationForm').reset();
-            violationsSorted = false;
-            const btn = document.getElementById('sortViolationsBtn');
-            if (btn) {
-                btn.textContent = '🔤 Сортировать по алфавиту';
-                btn.style.background = '#6c757d';
-            }
             loadViolations();
             loadStatistics();
         } else {
@@ -864,8 +1151,43 @@ async function searchDrivers(event) {
 // ===================== Экспорт =====================
 function buildExportPayload(section, format) {
     if (section === 'drivers') {
-        const rows = (driversSorted ? [...driversData].sort((a,b)=> (a.full_name||'').localeCompare((b.full_name||''),'ru')) : driversData)
-            .map(d => ({ id: d.id, full_name: d.full_name, license_number: d.license_number, address: d.address || '-', phone: d.phone || '-', created_date: new Date(d.created_date).toLocaleDateString() }));
+        // Используем ту же логику фильтрации и сортировки, что и в renderDriversTable
+        const driversWithStats = driversData.map(driver => {
+            const driverViolations = violationsData.filter(v => v.driver_id === driver.id);
+            const violationsCount = driverViolations.length;
+            const lastViolation = driverViolations.length > 0 
+                ? driverViolations.sort((a, b) => new Date(b.violation_date) - new Date(a.violation_date))[0]
+                : null;
+            return {
+                ...driver,
+                violations_count: violationsCount,
+                last_violation_date: lastViolation ? new Date(lastViolation.violation_date) : null
+            };
+        });
+        
+        let filtered = driversWithStats;
+        if (driversFilters.search) {
+            const searchLower = driversFilters.search.toLowerCase();
+            filtered = driversWithStats.filter(driver => 
+                (driver.full_name || '').toLowerCase().includes(searchLower) ||
+                (driver.license_number || '').toLowerCase().includes(searchLower) ||
+                (driver.address || '').toLowerCase().includes(searchLower) ||
+                (driver.phone || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        let sorted = applyDriversSort(filtered, driversFilters.sort);
+        
+        const rows = sorted.map(d => ({ 
+            id: d.id, 
+            full_name: d.full_name, 
+            license_number: d.license_number, 
+            address: d.address || '-', 
+            phone: d.phone || '-', 
+            violations_count: d.violations_count,
+            last_violation: d.last_violation_date ? d.last_violation_date.toLocaleDateString() : '-',
+            created_date: new Date(d.created_date).toLocaleDateString() 
+        }));
         return {
             title: 'Водители',
             format,
@@ -875,14 +1197,46 @@ function buildExportPayload(section, format) {
                 { key: 'license_number', title: 'Номер прав' },
                 { key: 'address', title: 'Адрес' },
                 { key: 'phone', title: 'Телефон' },
+                { key: 'violations_count', title: 'Нарушений' },
+                { key: 'last_violation', title: 'Последнее нарушение' },
                 { key: 'created_date', title: 'Дата регистрации' }
             ],
             rows
         };
     }
     if (section === 'vehicles') {
-        const rows = (vehiclesSorted ? [...vehiclesData].sort((a,b)=> (a.license_plate||'').localeCompare((b.license_plate||''),'ru')) : vehiclesData)
-            .map(v => ({ id: v.id, license_plate: v.license_plate, brand: v.brand, model: v.model, year: v.year || '-', owner: v.owner_name || `ID: ${v.owner_id}`, created_date: new Date(v.created_date).toLocaleDateString() }));
+        // Используем ту же логику фильтрации и сортировки, что и в renderVehiclesTable
+        const vehiclesWithStats = vehiclesData.map(vehicle => {
+            const vehicleViolations = violationsData.filter(v => v.vehicle_id === vehicle.id);
+            return {
+                ...vehicle,
+                violations_count: vehicleViolations.length
+            };
+        });
+        
+        let filtered = vehiclesWithStats;
+        if (vehiclesFilters.search) {
+            const searchLower = vehiclesFilters.search.toLowerCase();
+            filtered = vehiclesWithStats.filter(vehicle => 
+                (vehicle.license_plate || '').toLowerCase().includes(searchLower) ||
+                (vehicle.brand || '').toLowerCase().includes(searchLower) ||
+                (vehicle.model || '').toLowerCase().includes(searchLower) ||
+                (vehicle.owner_name || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        let sorted = applyVehiclesSort(filtered, vehiclesFilters.sort);
+        
+        const rows = sorted.map(v => ({ 
+            id: v.id, 
+            license_plate: v.license_plate, 
+            brand: v.brand, 
+            model: v.model, 
+            year: v.year || '-', 
+            owner: v.owner_name || `ID: ${v.owner_id}`, 
+            violations_count: v.violations_count,
+            created_date: new Date(v.created_date).toLocaleDateString() 
+        }));
         return {
             title: 'Автомобили',
             format,
@@ -893,23 +1247,39 @@ function buildExportPayload(section, format) {
                 { key: 'model', title: 'Модель' },
                 { key: 'year', title: 'Год' },
                 { key: 'owner', title: 'Владелец' },
+                { key: 'violations_count', title: 'Нарушений' },
                 { key: 'created_date', title: 'Дата регистрации' }
             ],
             rows
         };
     }
     if (section === 'violations') {
-        const rows = (violationsSorted ? [...violationsData].sort((a,b)=> (a.violation_type||'').localeCompare((b.violation_type||''),'ru')) : violationsData)
-            .map(v => ({
-                id: v.id,
-                driver: v.full_name || `ID: ${v.driver_id}`,
-                vehicle: v.license_plate ? `${v.license_plate} (${v.brand} ${v.model})` : `ID: ${v.vehicle_id}`,
-                violation_type: v.violation_type,
-                fine_amount: `${v.fine_amount} руб.`,
-                approval_status: v.approval_status === 'approved' ? 'Утверждено' : 'На утверждении',
-                status: v.status,
-                violation_date: new Date(v.violation_date).toLocaleDateString()
-            }));
+        // Используем ту же логику фильтрации и сортировки, что и в renderViolationsTable
+        let filtered = violationsData;
+        if (violationsFilters.search) {
+            const searchLower = violationsFilters.search.toLowerCase();
+            filtered = violationsData.filter(violation => 
+                (violation.full_name || '').toLowerCase().includes(searchLower) ||
+                (violation.license_plate || '').toLowerCase().includes(searchLower) ||
+                (violation.brand || '').toLowerCase().includes(searchLower) ||
+                (violation.model || '').toLowerCase().includes(searchLower) ||
+                (violation.violation_type || '').toLowerCase().includes(searchLower) ||
+                (violation.fine_amount || '').toString().includes(searchLower)
+            );
+        }
+        
+        let sorted = applyViolationsSort(filtered, violationsFilters.sort);
+        
+        const rows = sorted.map(v => ({
+            id: v.id,
+            driver: v.full_name || `ID: ${v.driver_id}`,
+            vehicle: v.license_plate ? `${v.license_plate} (${v.brand} ${v.model})` : `ID: ${v.vehicle_id}`,
+            violation_type: v.violation_type,
+            fine_amount: `${v.fine_amount} руб.`,
+            approval_status: v.approval_status === 'approved' ? 'Утверждено' : 'На утверждении',
+            status: v.status,
+            violation_date: new Date(v.violation_date).toLocaleDateString()
+        }));
         return {
             title: 'Нарушения',
             format,
