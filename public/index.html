@@ -92,11 +92,21 @@
                     <div style="display: flex; gap: .5rem; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">Список водителей</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button id="sortDriversBtn" onclick="sortDrivers()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
-                            <button onclick="exportData('drivers','txt')" title="TXT" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('drivers','docx')" title="DOCX" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('drivers','pdf')" title="PDF" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="driversSearchInput" placeholder="🔍 Поиск по ФИО, номеру прав, адресу, телефону..." style="flex: 1; min-width: 200px; padding: 0.5rem;">
+                        <select id="driversSortSelect" style="padding: 0.5rem;">
+                            <option value="">Сортировка...</option>
+                            <option value="violations_count_desc">По количеству нарушений (↓)</option>
+                            <option value="violations_count_asc">По количеству нарушений (↑)</option>
+                            <option value="last_violation_desc">По дате последнего нарушения (↓)</option>
+                            <option value="last_violation_asc">По дате последнего нарушения (↑)</option>
+                            <option value="name_asc">По алфавиту (А-Я)</option>
+                            <option value="name_desc">По алфавиту (Я-А)</option>
+                        </select>
+                        <button onclick="clearDriversFilters()" style="background: #dc3545; padding: 0.5rem 1rem;">🗑️ Очистить</button>
                     </div>
                     <div id="driversList"></div>
                 </div>
@@ -122,11 +132,19 @@
                     <div style="display: flex; gap:.5rem; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">Список автомобилей</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button id="sortVehiclesBtn" onclick="sortVehicles()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
-                            <button onclick="exportData('vehicles','txt')" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('vehicles','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('vehicles','pdf')" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="vehiclesSearchInput" placeholder="🔍 Поиск по госномеру, марке, модели..." style="flex: 1; min-width: 200px; padding: 0.5rem;">
+                        <select id="vehiclesSortSelect" style="padding: 0.5rem;">
+                            <option value="">Сортировка...</option>
+                            <option value="brand_asc">По марке (А-Я)</option>
+                            <option value="brand_desc">По марке (Я-А)</option>
+                            <option value="violations_count_desc">По количеству нарушений (↓)</option>
+                            <option value="violations_count_asc">По количеству нарушений (↑)</option>
+                        </select>
+                        <button onclick="clearVehiclesFilters()" style="background: #dc3545; padding: 0.5rem 1rem;">🗑️ Очистить</button>
                     </div>
                     <div id="vehiclesList"></div>
                 </div>
@@ -151,11 +169,21 @@
                     <div style="display: flex; gap:.5rem; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                         <h3 style="margin: 0;">Список нарушений</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button id="sortViolationsBtn" onclick="sortViolations()" style="background: #6c757d; padding: 0.5rem 1rem;">🔤 Сортировать по алфавиту</button>
-                            <button onclick="exportData('violations','txt')" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('violations','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('violations','pdf')" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
+                    </div>
+                    <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="violationsSearchInput" placeholder="🔍 Поиск по водителю, автомобилю, типу нарушения..." style="flex: 1; min-width: 200px; padding: 0.5rem;">
+                        <select id="violationsSortSelect" style="padding: 0.5rem;">
+                            <option value="">Сортировка...</option>
+                            <option value="date_desc">По дате (↓)</option>
+                            <option value="date_asc">По дате (↑)</option>
+                            <option value="fine_desc">По сумме штрафа (↓)</option>
+                            <option value="fine_asc">По сумме штрафа (↑)</option>
+                            <option value="driver_asc">По водителю (А-Я)</option>
+                            <option value="driver_desc">По водителю (Я-А)</option>
+                        </select>
+                        <button onclick="clearViolationsFilters()" style="background: #dc3545; padding: 0.5rem 1rem;">🗑️ Очистить</button>
                     </div>
                     <div id="violationsList"></div>
                 </div>
@@ -181,9 +209,7 @@
                     <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom:1rem;">
                         <h3 style="margin:0;">Результаты поиска</h3>
                         <div style="display:flex; gap:.5rem;">
-                            <button onclick="exportData('search','txt')" style="background:#596273; padding:.5rem 1rem;">TXT</button>
                             <button onclick="exportData('search','docx')" style="background:#596273; padding:.5rem 1rem;">DOCX</button>
-                            <button onclick="exportData('search','pdf')" style="background:#596273; padding:.5rem 1rem;">PDF</button>
                         </div>
                     </div>
                     <div id="searchResults"></div>
@@ -305,6 +331,31 @@
                 <input type="number" id="editVehicleOwnerId" placeholder="ID владельца" required>
                 <div class="modal-buttons">
                     <button type="button" onclick="closeModal('editVehicleModal')">Отмена</button>
+                    <button type="submit">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Модальное окно редактирования пользователя -->
+    <div id="editUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Редактировать пользователя</h3>
+                <span class="close" onclick="closeModal('editUserModal')">&times;</span>
+            </div>
+            <form id="editUserForm">
+                <input type="hidden" id="editUserId">
+                <input type="email" id="editUserEmail" placeholder="Email" required>
+                <input type="text" id="editUserName" placeholder="Имя">
+                <input type="text" id="editUserPhone" placeholder="Телефон">
+                <input type="text" id="editUserAddress" placeholder="Адрес">
+                <select id="editUserRole">
+                    <option value="user">Пользователь</option>
+                    <option value="admin">Администратор</option>
+                </select>
+                <div class="modal-buttons">
+                    <button type="button" onclick="closeModal('editUserModal')">Отмена</button>
                     <button type="submit">Сохранить</button>
                 </div>
             </form>
